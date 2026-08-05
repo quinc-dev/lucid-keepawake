@@ -1,0 +1,40 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.spec
+*.zip
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local logs & caches
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Agent & AI workspace files
+.agents/
+
+# PyArmor obfuscation output (build artifact — never commit)
+obf/

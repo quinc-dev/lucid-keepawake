@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lucid — Cyber-HUD Minimalist Keep-Awake for Windows</title>
+  <meta name="description" content="Ultra-clean, zero-side-effect Windows keep-awake utility featuring a Cyber-HUD Minimalist floating capsule and Win32 kernel execution state locking." />
+  <link rel="icon" type="image/png" href="assets/icon_active.png" />
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --bg-abyss: #080b10;
+      --bg-surface: #0d1117;
+      --bg-card: rgba(13, 17, 23, 0.75);
+      --bg-hover: #131a26;
+      --bg-active: #1e293b;
+      
+      --border-glass: #1e293b;
+      --border-subtle: #334155;
+      --border-active: #10b981;
+      
+      --neon-emerald: #10b981;
+      --neon-glow: rgba(16, 185, 129, 0.35);
+      --neon-bg: #064e3b;
+      --neon-ink: #6ee7b7;
+      
+      --ink-primary: #f1f5f9;
+      --ink-secondary: #94a3b8;
+      --ink-muted: #475569;
+      
+      --font-ui: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-abyss);
+      color: var(--ink-primary);
+      font-family: var(--font-ui);
+      overflow-x: hidden;
+      line-height: 1.6;
+      position: relative;
+    }
+
+    /* Cyber Matrix Canvas Grid */
+    #bg-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.45;
+    }
+
+    /* Scanline overlay */
+    .scanlines {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      background: linear-gradient(
+        rgba(18, 16, 16, 0) 50%, 
+        rgba(0, 0, 0, 0.25) 50%
+      ), linear-gradient(
+        90deg,
+        rgba(255, 0, 0, 0.01),
+        rgba(0, 255, 0, 0.01),
+        rgba(0, 0, 255, 0.01)
+      );
+      background-size: 100% 3px, 3px 100%;
+      z-index: 1;
+      opacity: 0.6;
+    }
+
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* ─── Navigation Header ─── */
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(8, 11, 16, 0.85);
+    }
+
+    .nav-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .brand:hover .brand-icon {
+      transform: scale(1.08) rotate(4deg);
+    }
+
+    .brand-title {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid var(--neon-emerald);
+      color: var(--neon-ink);
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .btn-ghost {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--ink-secondary);
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--border-glass);
+      background: rgba(13, 17, 23, 0.6);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-ghost:hover {
+      color: #fff;
+      border-color: var(--ink-muted);
+      background: var(--bg-hover);
+    }
+
+    .btn-primary {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: #042f2e;
+      background: var(--neon-emerald);
+      text-decoration: none;
+      padding: 8px 18px;
+      border-radius: 6px;
+      border: 1px solid #34d399;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 28px rgba(16, 185, 129, 0.6);
+      background: #34d399;
+    }
+
+    /* ─── Hero Section ─── */
+    .hero {
+      padding: 72px 0 48px;
+      text-align: center;
+    }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: var(--neon-ink);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      margin-bottom: 24px;
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+    }
+
+    .hero-tag .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--neon-emerald);
+      box-shadow: 0 0 8px var(--neon-emerald);
+      animation: pulse 1.5s infinite;
+    }
+
+    .hero h1 {
+      font-size: clamp(38px, 6vw, 64px);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1px;
+      margin-bottom: 20px;
+      background: linear-gradient(180deg, #ffffff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: clamp(16px, 2vw, 19px);
+      color: var(--ink-secondary);
+      max-width: 640px;
+      margin: 0 auto 40px;
+    }
+
+    /* ─── Interactive Live HUD Capsule Sandbox ─── */
+    .hud-sandbox {
+      background: rgba(13, 17, 23, 0.6);
+      border: 1px solid var(--border-glass);
+      border-radius: 16px;
+      padding: 48px 24px;
+      margin: 32px 0 64px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6), 0 16px 36px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(16px);
+    }
+
+    .sandbox-label {
+      position: absolute;
+      top: 14px;
+      left: 20px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-muted);
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sandbox-hint {
+      position: absolute;
+      bottom: 12px;
+      right: 20px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--ink-muted);
+      letter-spacing: 0.5px;
+    }
+
+    /* The Realistic 256x68 Virtual CTk Capsule */
+    .capsule-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 30px 0;
+    }
+
+    .hud-capsule {
+      width: 280px;
+      height: 76px;
+      background: var(--bg-abyss);
+      border: 1px solid var(--border-glass);
+      border-radius: 8px;
+      position: relative;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8), 0 0 24px rgba(16, 185, 129, 0.08);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px 12px;
+      user-select: none;
+      cursor: grab;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .hud-capsule.active {
+      border-color: var(--border-active);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8), 0 0 32px rgba(16, 185, 129, 0.25);
+    }
+
+    .hud-capsule:active {
+      cursor: grabbing;
+    }
+
+    /* 4 Dynamic HUD Corner Brackets */
+    .hud-corner {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-color: var(--border-subtle);
+      border-style: solid;
+      pointer-events: none;
+      transition: border-color 0.3s ease;
+    }
+
+    .hud-capsule.active .hud-corner {
+      border-color: var(--neon-emerald);
+      filter: drop-shadow(0 0 3px var(--neon-emerald));
+    }
+
+    .corner-tl { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+    .corner-tr { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
+    .corner-bl { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
+    .corner-br { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+    /* HUD Top Row */
+    .hud-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 24px;
+    }
+
+    .hud-status-group {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .radar-blip {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--ink-muted);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.3s ease;
+    }
+
+    .hud-capsule.active .radar-blip {
+      background: var(--neon-emerald);
+      box-shadow: 0 0 8px var(--neon-emerald);
+    }
+
+    .radar-blip::after {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 1px solid var(--neon-emerald);
+      opacity: 0;
+    }
+
+    .hud-capsule.active .radar-blip::after {
+      animation: radarRipple 1.2s infinite ease-out;
+    }
+
+    .hud-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--ink-muted);
+    }
+
+    .hud-timer {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--ink-primary);
+    }
+
+    .hud-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border-glass);
+      background: var(--bg-hover);
+      color: var(--ink-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .hud-pill:hover {
+      background: var(--bg-active);
+      color: #fff;
+    }
+
+    .hud-capsule.active .hud-pill {
+      background: #7f1d1d;
+      border-color: #ef4444;
+      color: #fca5a5;
+    }
+
+    /* Laser Line Divider */
+    .hud-laser {
+      width: 100%;
+      height: 2px;
+      background: var(--bg-hover);
+      border-radius: 1px;
+      position: relative;
+      overflow: hidden;
+      margin: 4px 0;
+    }
+
+    .hud-laser-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--neon-emerald);
+      box-shadow: 0 0 6px var(--neon-emerald);
+      transition: width 0.3s linear;
+    }
+
+    .hud-capsule.active .hud-laser-bar {
+      width: 100%;
+    }
+
+    /* HUD Controls Bottom Row */
+    .hud-chips {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 3px;
+    }
+
+    .chip-btn {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border-glass);
+      background: var(--bg-hover);
+      color: var(--ink-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      flex: 1;
+      text-align: center;
+    }
+
+    .chip-btn:hover {
+      background: var(--bg-active);
+      color: #fff;
+      border-color: var(--border-subtle);
+    }
+
+    .chip-btn.selected {
+      background: var(--neon-bg) !important;
+      border-color: var(--border-active) !important;
+      color: var(--neon-ink) !important;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+    }
+
+    /* ─── Highlights Cards ─── */
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin: 64px 0;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      padding: 28px;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(16, 185, 129, 0.4);
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 20px rgba(16, 185, 129, 0.1);
+    }
+
+    .card-icon {
+      font-size: 24px;
+      margin-bottom: 16px;
+      display: inline-block;
+    }
+
+    .card h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+
+    .card p {
+      font-size: 14px;
+      color: var(--ink-secondary);
+      line-height: 1.6;
+    }
+
+    /* ─── Zero-Side-Effect Comparison Matrix ─── */
+    .comparison-section {
+      margin: 80px 0;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .section-header h2 {
+      font-size: 32px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+
+    .section-header p {
+      color: var(--ink-secondary);
+      font-size: 16px;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-card);
+      border: 1px solid var(--border-glass);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 14px;
+    }
+
+    .matrix-table th, .matrix-table td {
+      padding: 16px 20px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-glass);
+    }
+
+    .matrix-table th {
+      background: rgba(19, 26, 38, 0.8);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 1px;
+      color: var(--ink-muted);
+      text-transform: uppercase;
+    }
+
+    .matrix-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .matrix-table .highlight-col {
+      background: rgba(16, 185, 129, 0.04);
+      color: var(--neon-ink);
+      font-weight: 600;
+      border-left: 1px solid rgba(16, 185, 129, 0.15);
+      border-right: 1px solid rgba(16, 185, 129, 0.15);
+    }
+
+    .matrix-table .bad-col {
+      color: #f87171;
+    }
+
+    /* ─── Download Hero Deck ─── */
+    .download-deck {
+      background: linear-gradient(180deg, rgba(16, 185, 129, 0.1) 0%, rgba(13, 17, 23, 0.9) 100%);
+      border: 1px solid var(--neon-emerald);
+      border-radius: 16px;
+      padding: 48px 32px;
+      text-align: center;
+      margin: 80px 0 40px;
+      box-shadow: 0 0 50px rgba(16, 185, 129, 0.15);
+    }
+
+    .download-deck h2 {
+      font-size: 32px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+
+    .download-deck p {
+      color: var(--ink-secondary);
+      max-width: 540px;
+      margin: 0 auto 32px;
+      font-size: 15px;
+    }
+
+    .download-cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 800;
+      color: #042f2e;
+      background: var(--neon-emerald);
+      text-decoration: none;
+      padding: 16px 36px;
+      border-radius: 8px;
+      border: 1px solid #34d399;
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
+      transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .download-cta-btn:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 0 45px rgba(16, 185, 129, 0.7);
+      background: #34d399;
+    }
+
+    .specs-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 24px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink-muted);
+    }
+
+    .specs-strip span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ─── Footer ─── */
+    footer {
+      border-top: 1px solid var(--border-glass);
+      padding: 32px 0;
+      margin-top: 64px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink-muted);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    footer a {
+      color: var(--ink-secondary);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--neon-emerald);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    @keyframes radarRipple {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(3.2); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="bg-canvas"></canvas>
+  <div class="scanlines"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="container nav-content">
+      <a href="#" class="brand">
+        <img src="assets/icon_active.png" alt="Lucid Icon" class="brand-icon" />
+        <div class="brand-title">
+          LUCID <span class="brand-badge">v1.0.0</span>
+        </div>
+      </a>
+      <div class="nav-actions">
+        <a href="https://github.com/quinc-dev/lucid-keepawake" target="_blank" class="btn-ghost">
+          <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="https://github.com/quinc-dev/lucid-keepawake/releases/download/v1.0.0/Lucid-v1.0.0-win64.zip" class="btn-primary">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download .EXE
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero & Interactive Simulator -->
+  <main class="container">
+    <section class="hero">
+      <div class="hero-tag">
+        <span class="dot"></span>
+        ZERO-SIDE-EFFECT WIN32 KERNEL LOCK
+      </div>
+      <h1>Cyber-HUD Keep-Awake for Windows</h1>
+      <p>An ultra-clean floating capsule utility that prevents display & system sleep using native Win32 execution state locks. No mouse jitters, no fake keystrokes.</p>
+
+      <!-- Live Virtual Simulator -->
+      <div class="hud-sandbox" id="sandbox">
+        <div class="sandbox-label">
+          <span style="color: var(--neon-emerald);">●</span> LIVE VIRTUAL CAPSULE SIMULATOR (CLICK & TEST)
+        </div>
+        <div class="sandbox-hint">DRAG TO REPOSITION ⬡</div>
+
+        <div class="capsule-wrapper">
+          <div class="hud-capsule" id="sim-capsule">
+            <!-- 4 Corner Brackets -->
+            <div class="hud-corner corner-tl"></div>
+            <div class="hud-corner corner-tr"></div>
+            <div class="hud-corner corner-bl"></div>
+            <div class="hud-corner corner-br"></div>
+
+            <!-- Top Row -->
+            <div class="hud-top">
+              <div class="hud-status-group">
+                <div class="radar-blip" id="sim-radar"></div>
+                <span class="hud-tag">LUCID // SYS</span>
+              </div>
+              <span class="hud-timer" id="sim-timer">STANDBY</span>
+              <button class="hud-pill" id="sim-pill" onclick="toggleSimPower()">▶ ON</button>
+            </div>
+
+            <!-- Laser Progress Bar -->
+            <div class="hud-laser">
+              <div class="hud-laser-bar" id="sim-laser"></div>
+            </div>
+
+            <!-- Segmented Duration Chips -->
+            <div class="hud-chips">
+              <button class="chip-btn" onclick="startSimTimer(15, '15m')">15m</button>
+              <button class="chip-btn" onclick="startSimTimer(30, '30m')">30m</button>
+              <button class="chip-btn" onclick="startSimTimer(60, '1h')">1h</button>
+              <button class="chip-btn" onclick="startSimTimer(120, '2h')">2h</button>
+              <button class="chip-btn" onclick="startCustomSim()">10s</button>
+              <button class="chip-btn" id="chip-inf" onclick="startSimInfinite()">∞</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Highlights Grid -->
+    <section class="grid-3">
+      <div class="card">
+        <div class="card-icon">🛡️</div>
+        <h3>Zero-Side-Effect Engine</h3>
+        <p>Uses Windows native <code>SetThreadExecutionState</code> kernel lock. Never moves your cursor, never generates artificial keys, and never interrupts full-screen apps or games.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🔮</div>
+        <h3>Cyber-HUD Minimalist</h3>
+        <p>Ultra-compact 256×68px Obsidian floating capsule with glowing radar blip, dynamic HUD corner brackets, and a 2px hairline neon emerald laser countdown progress bar.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">💎</div>
+        <h3>Dual-State Dynamic Tray</h3>
+        <p>4x Supersampled system tray icons automatically transition between glowing Neon Emerald (Active) and calm Titanium Slate (Standby) in real time.</p>
+      </div>
+    </section>
+
+    <!-- Comparison Matrix -->
+    <section class="comparison-section">
+      <div class="section-header">
+        <h2>Why Lucid is Different</h2>
+        <p>True kernel-level display locking vs. archaic fake-input mouse movers.</p>
+      </div>
+
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th>Feature / Behavior</th>
+            <th class="highlight-col">⬡ Lucid (Win32 Kernel Lock)</th>
+            <th>Mouse Jitter / Fake Key Tools</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Mouse Pointer</strong></td>
+            <td class="highlight-col">✓ Completely Untouched</td>
+            <td class="bad-col">✗ Moves cursor randomly, ruins clicks</td>
+          </tr>
+          <tr>
+            <td><strong>Keyboard Typing</strong></td>
+            <td class="highlight-col">✓ 0% Interference</td>
+            <td class="bad-col">✗ Injects fake keystrokes (F15/ScrollLock)</td>
+          </tr>
+          <tr>
+            <td><strong>CPU & Power Consumption</strong></td>
+            <td class="highlight-col">✓ 0.0% CPU (Passive OS state)</td>
+            <td class="bad-col">✗ Constant polling loop</td>
+          </tr>
+          <tr>
+            <td><strong>Installation Footprint</strong></td>
+            <td class="highlight-col">✓ Single Portable .EXE (No Install)</td>
+            <td class="bad-col">✗ Heavy 100MB+ installers or scripts</td>
+          </tr>
+          <tr>
+            <td><strong>Privacy & Network</strong></td>
+            <td class="highlight-col">✓ 100% Offline & Zero Telemetry</td>
+            <td class="bad-col">✗ Often bundles trackers/analytics</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Download Deck -->
+    <section class="download-deck">
+      <h2>Get Lucid for Windows</h2>
+      <p>Download the standalone single-file binary. No installer required. Unzip and run immediately on Windows 10 & 11.</p>
+      <a href="https://github.com/quinc-dev/lucid-keepawake/releases/download/v1.0.0/Lucid-v1.0.0-win64.zip" class="download-cta-btn">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Download Lucid-v1.0.0-win64.zip
+      </a>
+      <div class="specs-strip">
+        <span>● Windows 10 / 11 (64-bit)</span>
+        <span>● Portable .EXE</span>
+        <span>● Open-Source (MIT)</span>
+        <span>● 100% Offline</span>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <div>Lucid Keep-Awake • Released under <a href="LICENSE" target="_blank">MIT License</a> • Crafted by <a href="https://github.com/quinc-dev" target="_blank">QuiNC</a></div>
+      <div style="opacity: 0.4;">ds:rev-5175.694e.43</div>
+    </footer>
+  </main>
+
+  <!-- Interactive Scripts -->
+  <script>
+    // ── Grid Canvas Animation ────────────────────────────────────────────────
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let gridOffset = 0;
+    function drawGrid() {
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+      ctx.lineWidth = 1;
+
+      const gridSize = 48;
+      gridOffset = (gridOffset + 0.3) % gridSize;
+
+      // Vertical lines
+      for (let x = 0; x < width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+
+      // Horizontal lines
+      for (let y = gridOffset; y < height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+
+      // Ambient radial emerald gradient
+      const grad = ctx.createRadialGradient(width / 2, height / 3, 10, width / 2, height / 3, 450);
+      grad.addColorStop(0, 'rgba(16, 185, 129, 0.08)');
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+
+      requestAnimationFrame(drawGrid);
+    }
+    drawGrid();
+
+    // ── Live Virtual HUD Capsule Logic ───────────────────────────────────────
+    let simState = 'IDLE'; // 'IDLE', 'INFINITE', 'TIMER'
+    let simSeconds = 0;
+    let simTotal = 0;
+    let simInterval = null;
+
+    const capsule = document.getElementById('sim-capsule');
+    const timerText = document.getElementById('sim-timer');
+    const pillBtn = document.getElementById('sim-pill');
+    const laserBar = document.getElementById('sim-laser');
+    const chipButtons = document.querySelectorAll('.chip-btn');
+
+    function clearChipSelection() {
+      chipButtons.forEach(btn => btn.classList.remove('selected'));
+    }
+
+    function formatTime(secs) {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function setSimState(state, durationSecs = 0, label = '') {
+      simState = state;
+      clearInterval(simInterval);
+
+      if (state === 'IDLE') {
+        capsule.classList.remove('active');
+        timerText.textContent = 'STANDBY';
+        timerText.style.color = '#f1f5f9';
+        pillBtn.textContent = '▶ ON';
+        laserBar.style.width = '0%';
+        clearChipSelection();
+      } else if (state === 'INFINITE') {
+        capsule.classList.add('active');
+        timerText.textContent = '∞ ACTIVE';
+        timerText.style.color = '#10b981';
+        pillBtn.textContent = '■ STOP';
+        laserBar.style.width = '100%';
+        clearChipSelection();
+        document.getElementById('chip-inf').classList.add('selected');
+      } else if (state === 'TIMER') {
+        capsule.classList.add('active');
+        simSeconds = durationSecs;
+        simTotal = durationSecs;
+        timerText.textContent = formatTime(simSeconds);
+        timerText.style.color = '#10b981';
+        pillBtn.textContent = '■ STOP';
+        laserBar.style.width = '100%';
+
+        simInterval = setInterval(() => {
+          simSeconds--;
+          timerText.textContent = formatTime(simSeconds);
+          const percent = Math.max(0, (simSeconds / simTotal) * 100);
+          laserBar.style.width = `${percent}%`;
+
+          if (simSeconds <= 0) {
+            setSimState('IDLE');
+          }
+        }, 1000);
+      }
+    }
+
+    function toggleSimPower() {
+      if (simState === 'IDLE') {
+        setSimState('INFINITE');
+      } else {
+        setSimState('IDLE');
+      }
+    }
+
+    function startSimInfinite() {
+      setSimState('INFINITE');
+    }
+
+    function startSimTimer(minutes, chipLabel) {
+      clearChipSelection();
+      event.target.classList.add('selected');
+      setSimState('TIMER', minutes * 60, chipLabel);
+    }
+
+    function startCustomSim() {
+      clearChipSelection();
+      event.target.classList.add('selected');
+      setSimState('TIMER', 10, '10s');
+    }
+
+    // ── Draggable Capsule in Sandbox ─────────────────────────────────────────
+    let isDragging = false;
+    let startX, startY, initialX = 0, initialY = 0;
+
+    capsule.addEventListener('mousedown', (e) => {
+      if (e.target.tagName === 'BUTTON') return;
+      isDragging = true;
+      startX = e.clientX - initialX;
+      startY = e.clientY - initialY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      initialX = e.clientX - startX;
+      initialY = e.clientY - startY;
+      capsule.style.transform = `translate(${initialX}px, ${initialY}px)`;
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+  </script>
+</body>
+</html>

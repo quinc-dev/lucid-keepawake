@@ -47,6 +47,41 @@ ctk.set_default_color_theme("dark-blue")
 # Helper: Duration Parser
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _force_window_foreground(hwnd: int) -> bool:
+    """
+    Robust Win32 foreground activation for borderless / system tray windows.
+    Bypasses Windows foreground lock timeout via thread attachment / Alt key toggle.
+    """
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
+        if user32.SetForegroundWindow(hwnd):
+            user32.SetFocus(hwnd)
+            return True
+
+        fg_hwnd = user32.GetForegroundWindow()
+        if fg_hwnd:
+            fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
+            cur_tid = kernel32.GetCurrentThreadId()
+            if fg_tid != cur_tid:
+                user32.AttachThreadInput(cur_tid, fg_tid, True)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetFocus(hwnd)
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
+                return True
+
+        # Fallback: Alt key toggle to bypass foreground lock timeout
+        user32.keybd_event(0x12, 0, 0, 0)
+        user32.SetForegroundWindow(hwnd)
+        user32.SetFocus(hwnd)
+        user32.keybd_event(0x12, 0, 2, 0)
+        return True
+    except Exception:
+        return False
+
+
 def parse_duration(text: str) -> Optional[int]:
     """
     Parse user time input (e.g. '45', '45m', '1.5h', '90s', '01:30') into seconds.
@@ -637,6 +672,7 @@ class LucidWidget(ctk.CTk):
         widget.bind("<Button-3>", self._show_context_menu)
 
     def _drag_start(self, event):
+        self.focus_force()
         self._drag_x = event.x_root - self.winfo_x()
         self._drag_y = event.y_root - self.winfo_y()
 
@@ -711,9 +747,25 @@ class LucidWidget(ctk.CTk):
             self._cb_toggle_blackout()
 
     def _show_context_menu(self, event):
-        self._close_context_menu()
+        self.focus_force()
+        hwnd_top = None
+        try:
+            import ctypes
+            hwnd = self.winfo_id()
+            hwnd_top = ctypes.windll.user32.GetAncestor(hwnd, 2) or hwnd
+            _force_window_foreground(hwnd_top)
+        except Exception:
+            pass
+
         state = self._get_state()
         is_active = state != AppState.IDLE
+
+        chosen_action = [None]
+
+        def _pick(callback):
+            def handler():
+                chosen_action[0] = callback
+            return handler
 
         menu = tk.Menu(
             self,
@@ -727,53 +779,54 @@ class LucidWidget(ctk.CTk):
         )
         self._active_menu = menu
 
-        def _schedule(callback):
-            def handler():
-                self._close_context_menu()
-                self.after(35, callback)
-            return handler
-
         if self._update_info and self._update_info.has_update:
             menu.add_command(
                 label=f"Update to v{self._update_info.latest_version}",
-                command=_schedule(lambda: open_release_page(self._update_info.html_url)),
+                command=_pick(lambda: open_release_page(self._update_info.html_url)),
                 foreground="#10B981",
                 activeforeground="#6EE7B7",
             )
             menu.add_separator()
 
         if is_active:
-            menu.add_command(label="Stop Keep-Awake", command=_schedule(self._cb_stop))
+            menu.add_command(label="Stop Keep-Awake", command=_pick(self._cb_stop))
         else:
-            menu.add_command(label="Stay Awake (Infinite)", command=_schedule(self._cb_toggle_infinite))
+            menu.add_command(label="Stay Awake (Infinite)", command=_pick(self._cb_toggle_infinite))
 
-        menu.add_command(label="OLED Blackout Curtain", command=_schedule(self._on_hotkey_blackout), accelerator="Ctrl+Shift+B")
+        menu.add_command(label="OLED Blackout Curtain", command=_pick(self._on_hotkey_blackout), accelerator="Ctrl+Shift+B")
         menu.add_separator()
-        menu.add_command(label=f"Lucid v{CURRENT_VERSION}", command=_schedule(self._manual_check_update))
-        menu.add_command(label="Hide to Tray", command=_schedule(self.hide))
+        menu.add_command(label=f"Lucid v{CURRENT_VERSION}", command=_pick(self._manual_check_update))
+        menu.add_command(label="Hide to Tray", command=_pick(self.hide))
         menu.add_separator()
-        menu.add_command(label="Quit Lucid", command=_schedule(self._cb_quit))
-
-        hwnd_top = None
-        try:
-            import ctypes
-            hwnd = self.winfo_id()
-            hwnd_top = ctypes.windll.user32.GetAncestor(hwnd, 2) or hwnd
-            ctypes.windll.user32.SetForegroundWindow(hwnd_top)
-        except Exception:
-            pass
+        menu.add_command(label="Quit Lucid", command=_pick(self._cb_quit))
 
         try:
             menu.tk_popup(event.x_root, event.y_root)
         except Exception:
             pass
-
-        if hwnd_top:
+        finally:
             try:
-                import ctypes
-                ctypes.windll.user32.PostMessageW(hwnd_top, 0, 0, 0)
+                menu.unpost()
             except Exception:
                 pass
+            try:
+                menu.destroy()
+            except Exception:
+                pass
+            self._active_menu = None
+            if hwnd_top:
+                try:
+                    import ctypes
+                    ctypes.windll.user32.PostMessageW(hwnd_top, 0, 0, 0)
+                except Exception:
+                    pass
+
+        # Native TrackPopupMenu modal loop has cleanly unposted and exited.
+        # It is now 100% safe to dispatch deferred actions without freezing context menu.
+        if chosen_action[0]:
+            action = chosen_action[0]
+            chosen_action[0] = None
+            self.after(10, action)
 
     def set_update_info(self, info: UpdateInfo):
         """Called when update information is fetched from GitHub Releases."""
@@ -943,7 +996,13 @@ class LucidWidget(ctk.CTk):
             self.attributes("-topmost", True)
 
     def hide(self):
-        self._close_context_menu()
+        if hasattr(self, "_active_menu") and self._active_menu:
+            try:
+                self._active_menu.unpost()
+                self._active_menu.destroy()
+            except Exception:
+                pass
+            self._active_menu = None
         if not self._is_closing:
             self.withdraw()
 

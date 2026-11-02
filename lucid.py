@@ -224,7 +224,7 @@ class LucidApp:
             return {
                 "status": "ok",
                 "state": self._timer.state.name,
-                "remaining_seconds": self._timer.remaining_seconds,
+                "remaining_seconds": self._timer.remaining,
                 "remaining_formatted": self._timer.format_remaining(),
                 "is_curtain_active": self._curtain.is_active if self._curtain else False,
                 "version": CURRENT_VERSION,

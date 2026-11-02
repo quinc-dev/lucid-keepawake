@@ -511,7 +511,7 @@ class CyberContextMenu(tk.Toplevel):
 
         self.focus_force()
         self.bind("<Escape>", lambda e: self._close())
-        self.after(50, self._setup_dismiss)
+        self.after(100, self._setup_dismiss)
 
     def _setup_dismiss(self):
         try:
@@ -519,6 +519,7 @@ class CyberContextMenu(tk.Toplevel):
             self.bind("<ButtonPress>", self._on_click_check)
         except Exception:
             pass
+        self._poll_dismiss()
 
     def _on_click_check(self, event):
         x, y = event.x_root, event.y_root
@@ -528,6 +529,45 @@ class CyberContextMenu(tk.Toplevel):
         wh = self.winfo_height()
         if not (wx <= x <= wx + ww and wy <= y <= wy + wh):
             self._close()
+
+    def _poll_dismiss(self):
+        """
+        Universal desktop-wide dismissal:
+        Detects clicks anywhere on the Windows desktop (browser, wallpaper, taskbar)
+        and automatically dismisses the context card on the very 1st click.
+        """
+        if self._is_closed:
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            # VK_LBUTTON = 0x01, VK_RBUTTON = 0x02
+            lbtn = (user32.GetAsyncKeyState(0x01) & 0x8000) != 0
+            rbtn = (user32.GetAsyncKeyState(0x02) & 0x8000) != 0
+
+            if lbtn or rbtn:
+                class POINT(ctypes.Structure):
+                    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+                pt = POINT()
+                user32.GetCursorPos(ctypes.byref(pt))
+                mx, my = self.winfo_rootx(), self.winfo_rooty()
+                mw, mh = self.winfo_width(), self.winfo_height()
+                if not (mx <= pt.x <= mx + mw and my <= pt.y <= my + mh):
+                    self._close()
+                    return
+
+            fg = user32.GetForegroundWindow()
+            hwnd = self.winfo_id()
+            top_hwnd = user32.GetAncestor(hwnd, 2) or hwnd
+            master_top = user32.GetAncestor(self._master.winfo_id(), 2) or self._master.winfo_id()
+            if fg and fg != top_hwnd and fg != master_top:
+                self._close()
+                return
+        except Exception:
+            pass
+
+        if not self._is_closed:
+            self.after(35, self._poll_dismiss)
 
     def _close(self):
         if self._is_closed:
@@ -753,7 +793,25 @@ class LucidWidget(ctk.CTk):
             justify="center",
         )
         self._custom_entry.pack(side="left", padx=(1, 2))
+
+        def _focus_entry(e=None):
+            self.focus_force()
+            self._custom_entry.focus_set()
+            try:
+                import ctypes
+                hwnd = self.winfo_id()
+                top_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 2) or hwnd
+                _force_window_foreground(top_hwnd)
+                ctypes.windll.user32.SetFocus(top_hwnd)
+            except Exception:
+                pass
+
+        self._custom_entry.bind("<Button-1>", _focus_entry)
         self._custom_entry.bind("<Return>", lambda e: self._on_custom_submit())
+        if hasattr(self._custom_entry, "_entry"):
+            self._custom_entry._entry.bind("<Button-1>", _focus_entry)
+            self._custom_entry._entry.bind("<FocusIn>", _focus_entry)
+            self._custom_entry._entry.bind("<Return>", lambda e: self._on_custom_submit())
 
         # Spacer
         tk.Frame(bottom, bg=theme.BG_WIDGET).pack(side="left", fill="x", expand=True)

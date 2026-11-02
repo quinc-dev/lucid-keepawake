@@ -408,74 +408,93 @@ class CornerBracket(tk.Canvas):
 # LucidWidget  (Cyber-HUD Minimalist)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class CyberContextMenu(ctk.CTkToplevel):
+class CyberContextMenu(tk.Toplevel):
     """
-    Titanium/Zinc Cyber Context Card.
-    Custom frameless floating card replacing legacy Win32 tk.Menu.
-    Guarantees 100% first-click activation, smooth hover styling,
-    and instantaneous, leak-free teardown.
+    Ultra-compact Titanium/Zinc Cyber Context Card.
+    Pixel-perfect frameless card with zero wasted padding or DPI scaling voids.
+    Instant 1st-click response, smooth hover illumination, leak-free teardown.
     """
 
     def __init__(self, master: ctk.CTk, x: int, y: int, items: list):
         super().__init__(master)
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        self.configure(fg_color=theme.BG_POPUP)
+        self.configure(bg=theme.BG_POPUP)
         self._master = master
         self._is_closed = False
 
-        card = ctk.CTkFrame(
+        card = tk.Frame(
             self,
-            fg_color=theme.BG_POPUP,
-            corner_radius=4,
-            border_width=1,
-            border_color=theme.BORDER_SUBTLE,
+            bg=theme.BG_POPUP,
+            highlightthickness=1,
+            highlightbackground=theme.BORDER_SUBTLE,
         )
-        card.pack(fill="both", expand=True, padx=1, pady=1)
+        card.pack(fill="both", expand=True)
 
         for item in items:
             if item == "---":
-                sep = ctk.CTkFrame(card, height=1, fg_color=theme.BORDER_GLASS, corner_radius=0)
-                sep.pack(fill="x", padx=8, pady=3)
+                sep = tk.Frame(card, height=1, bg=theme.BORDER_GLASS, bd=0)
+                sep.pack(fill="x", padx=6, pady=2)
             else:
                 label, cmd, color, accel = item
-                row = ctk.CTkFrame(card, fg_color="transparent", height=24)
-                row.pack(fill="x", padx=4, pady=1)
+                row = tk.Frame(card, bg=theme.BG_POPUP, cursor="hand2")
+                row.pack(fill="x", padx=1, pady=0)
 
-                btn = ctk.CTkButton(
+                lbl = tk.Label(
                     row,
-                    text=label,
+                    text=f" {label}",
                     anchor="w",
-                    fg_color="transparent",
-                    text_color=color or theme.INK_PRIMARY,
-                    hover_color=theme.BG_HOVER,
-                    font=(theme.FONT_MONO, 11),
-                    height=24,
-                    corner_radius=2,
-                    command=lambda c=cmd: self._select(c),
+                    bg=theme.BG_POPUP,
+                    fg=color or theme.INK_PRIMARY,
+                    font=(theme.FONT_MONO, 9),
+                    pady=2,
+                    cursor="hand2",
                 )
-                btn.pack(side="left", fill="x", expand=True)
+                lbl.pack(side="left", fill="x", expand=True, padx=(2, 6))
 
+                accel_lbl = None
                 if accel:
-                    lbl = ctk.CTkLabel(
+                    accel_lbl = tk.Label(
                         row,
                         text=accel,
-                        font=(theme.FONT_MONO, 9),
-                        text_color=theme.INK_MUTED,
+                        anchor="e",
+                        bg=theme.BG_POPUP,
+                        fg=theme.INK_MUTED,
+                        font=(theme.FONT_MONO, 8),
+                        cursor="hand2",
                     )
-                    lbl.pack(side="right", padx=6)
+                    accel_lbl.pack(side="right", padx=(0, 6))
+
+                # Coordinated hover illumination
+                def on_enter(e, r=row, l=lbl, a=accel_lbl):
+                    r.configure(bg=theme.BG_HOVER)
+                    l.configure(bg=theme.BG_HOVER)
+                    if a:
+                        a.configure(bg=theme.BG_HOVER)
+
+                def on_leave(e, r=row, l=lbl, a=accel_lbl):
+                    r.configure(bg=theme.BG_POPUP)
+                    l.configure(bg=theme.BG_POPUP)
+                    if a:
+                        a.configure(bg=theme.BG_POPUP)
+
+                widgets = [row, lbl, accel_lbl] if accel_lbl else [row, lbl]
+                for w in widgets:
+                    w.bind("<Enter>", on_enter)
+                    w.bind("<Leave>", on_leave)
+                    w.bind("<Button-1>", lambda e, c=cmd: self._select(c))
 
         self.update_idletasks()
-        w = max(card.winfo_reqwidth() + 8, 220)
-        h = card.winfo_reqheight() + 8
+        w = self.winfo_reqwidth()
+        h = self.winfo_reqheight()
 
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         if x + w > sw:
-            x = sw - w - 8
+            x = sw - w - 6
         if y + h > sh:
-            y = sh - h - 8
-        self.geometry(f"{w}x{h}+{x}+{y}")
+            y = sh - h - 6
+        self.geometry(f"+{x}+{y}")
 
         self.focus_force()
         self.bind("<Escape>", lambda e: self._close())
@@ -514,6 +533,7 @@ class CyberContextMenu(ctk.CTkToplevel):
         self._close()
         if cmd:
             self._master.after(20, cmd)
+
 
 
 class LucidWidget(ctk.CTk):

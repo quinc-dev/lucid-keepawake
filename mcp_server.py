@@ -17,6 +17,9 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 from core.ipc import send_ipc_command, get_active_ipc_port
+from core.awake import AwakeController
+
+mcp_awake = AwakeController()
 
 logging.basicConfig(
     filename=os.path.join(os.environ.get("TEMP", "."), "lucid_mcp.log"),
@@ -25,7 +28,7 @@ logging.basicConfig(
 )
 
 
-def ensure_lucid_running(timeout: float = 3.0) -> bool:
+def ensure_lucid_running(timeout: float = 3.0, start_active: bool = False) -> bool:
     """Launch Lucid in the background if it is not currently active."""
     if get_active_ipc_port() is not None:
         return True
@@ -39,8 +42,12 @@ def ensure_lucid_running(timeout: float = 3.0) -> bool:
             if os.path.exists(pythonw):
                 python_exe = pythonw
 
+        cmd_args = [python_exe, lucid_script]
+        if start_active:
+            cmd_args.extend(["--awake", "0"])
+
         subprocess.Popen(
-            [python_exe, lucid_script],
+            cmd_args,
             cwd=PROJECT_DIR,
             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             close_fds=True,
@@ -135,7 +142,8 @@ def handle_tool_call(name: str, args: dict) -> dict:
         return {"content": [{"type": "text", "text": json.dumps(res, indent=2)}]}
 
     elif name == "lucid_blackout":
-        ensure_lucid_running()
+        mcp_awake.activate(require_display=True)
+        ensure_lucid_running(start_active=True)
         res = send_ipc_command("blackout")
         if res and res.get("status") == "ok":
             return {"content": [{"type": "text", "text": "OLED Blackout Curtain successfully engaged. OLED subpixels are turned off (0 nits, 0% burn-in). CPU & GPU are kept at 100% throughput."}]}
@@ -148,7 +156,8 @@ def handle_tool_call(name: str, args: dict) -> dict:
         return {"content": [{"type": "text", "text": "Lucid instance is not currently active, screen should be at default system state."}]}
 
     elif name == "lucid_set_awake":
-        ensure_lucid_running()
+        mcp_awake.activate(require_display=True)
+        ensure_lucid_running(start_active=True)
         minutes = args.get("minutes", 0)
         seconds = int(minutes * 60) if minutes and minutes > 0 else 0
         res = send_ipc_command("awake", {"duration": seconds})
@@ -158,6 +167,7 @@ def handle_tool_call(name: str, args: dict) -> dict:
         return {"isError": True, "content": [{"type": "text", "text": f"Failed to set awake: {res}"}]}
 
     elif name == "lucid_stop":
+        mcp_awake.release()
         res = send_ipc_command("stop")
         if res and res.get("status") == "ok":
             return {"content": [{"type": "text", "text": "Keep-awake stopped. System returned to standby."}]}

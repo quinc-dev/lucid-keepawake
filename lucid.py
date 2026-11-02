@@ -67,7 +67,7 @@ class LucidApp:
 
     # ─── Startup ───────────────────────────────────────────────────────────────
 
-    def run(self, initial_blackout: bool = False):
+    def run(self, initial_blackout: bool = False, initial_awake_seconds: int | None = None):
         logger.info(f"Lucid v{CURRENT_VERSION} starting…")
 
         # Create widget first (must be on main thread)
@@ -109,9 +109,14 @@ class LucidApp:
         # Check for GitHub releases in the background
         self._trigger_update_check()
 
-        # Engage blackout if requested on startup
+        # Engage initial mode if requested on startup
         if initial_blackout:
             self._widget.after(300, self.engage_blackout)
+        elif initial_awake_seconds is not None:
+            if initial_awake_seconds == 0:
+                self._widget.after(300, self.toggle_infinite)
+            else:
+                self._widget.after(300, lambda: self.start_timer(initial_awake_seconds))
 
         logger.info("Lucid running. Widget visible, tray active, IPC online.")
 
@@ -190,11 +195,12 @@ class LucidApp:
     def _do_engage_blackout(self):
         logger.info("Lucid: Engaging OLED Blackout Curtain")
         if self._timer.state == AppState.IDLE:
-            # Activate background keep-awake (system/GPU alive, display not forced)
-            self._awake.activate(require_display=False)
+            # Always assert full keep-awake (ES_DISPLAY_REQUIRED + ES_SYSTEM_REQUIRED)
+            # to guarantee Windows Lock Screen NEVER triggers
+            self._awake.activate(require_display=True)
             self._timer.start_infinite()
         else:
-            self._awake.set_display_required(False)
+            self._awake.activate(require_display=True)
 
         if self._curtain:
             self._curtain.engage()
@@ -383,9 +389,9 @@ def main():
             if res:
                 print(f"Lucid: {res.get('message', 'Awake active')}")
             else:
-                print("Lucid instance not running. Starting Lucid...")
+                print("Lucid instance not running. Starting Lucid in Keep-Awake mode...")
                 app = LucidApp()
-                app.run()
+                app.run(initial_awake_seconds=dur)
             sys.exit(0)
         elif cmd in ("help", "h"):
             print("Lucid CLI v1.1.0 — OLED & Keep-Awake Manager")

@@ -491,18 +491,22 @@ class CyberContextMenu(tk.Toplevel):
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
 
-        # Intelligent offset: float cleanly outside the HUD (above by default, below if at screen top)
-        # Guarantees zero overlapping / obscuring of the widget controls
-        wx = master.winfo_rootx()
-        wy = master.winfo_rooty()
-        wh = master.winfo_height()
+        # Natural cursor-anchored placement (standard OS context menu behavior):
+        # Spawns immediately adjacent to the cursor (+2, +2) with automatic smart flip
+        target_x = x + 2
+        target_y = y + 2
 
-        if wy - h - 8 >= 0:
-            target_y = wy - h - 8
-        else:
-            target_y = wy + wh + 8
+        # If overflowing bottom edge, flip upward right above cursor
+        if target_y + h > sh - 6:
+            target_y = y - h - 2
 
-        target_x = max(8, min(x - 16, sw - w - 8))
+        # If overflowing right edge, flip leftward right beside cursor
+        if target_x + w > sw - 6:
+            target_x = x - w - 2
+
+        # Clamp safely within visible display boundaries
+        target_x = max(4, min(target_x, sw - w - 4))
+        target_y = max(4, min(target_y, sh - h - 4))
         self.geometry(f"+{target_x}+{target_y}")
 
         self.focus_force()

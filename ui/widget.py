@@ -690,6 +690,11 @@ class LucidWidget(ctk.CTk):
     # ─── Context Menu ────────────────────────────────────────────────────────
 
     def _close_context_menu(self):
+        try:
+            import ctypes
+            ctypes.windll.user32.EndMenu()
+        except Exception:
+            pass
         if hasattr(self, "_active_menu") and self._active_menu:
             try:
                 self._active_menu.unpost()
@@ -722,49 +727,53 @@ class LucidWidget(ctk.CTk):
         )
         self._active_menu = menu
 
-        def _wrap(callback):
+        def _schedule(callback):
             def handler():
                 self._close_context_menu()
-                callback()
+                self.after(35, callback)
             return handler
-
-        def _wrap_hide():
-            self._close_context_menu()
-            self.hide()
-
-        def _wrap_quit():
-            self._close_context_menu()
-            self.after(10, self._cb_quit)
-
-        def _wrap_blackout():
-            self._close_context_menu()
-            self._on_hotkey_blackout()
 
         if self._update_info and self._update_info.has_update:
             menu.add_command(
                 label=f"Update to v{self._update_info.latest_version}",
-                command=_wrap(lambda: open_release_page(self._update_info.html_url)),
+                command=_schedule(lambda: open_release_page(self._update_info.html_url)),
                 foreground="#10B981",
                 activeforeground="#6EE7B7",
             )
             menu.add_separator()
 
         if is_active:
-            menu.add_command(label="Stop Keep-Awake", command=_wrap(self._cb_stop))
+            menu.add_command(label="Stop Keep-Awake", command=_schedule(self._cb_stop))
         else:
-            menu.add_command(label="Stay Awake (Infinite)", command=_wrap(self._cb_toggle_infinite))
+            menu.add_command(label="Stay Awake (Infinite)", command=_schedule(self._cb_toggle_infinite))
 
-        menu.add_command(label="OLED Blackout Curtain", command=_wrap_blackout, accelerator="Ctrl+Shift+B")
+        menu.add_command(label="OLED Blackout Curtain", command=_schedule(self._on_hotkey_blackout), accelerator="Ctrl+Shift+B")
         menu.add_separator()
-        menu.add_command(label=f"Lucid v{CURRENT_VERSION}", command=_wrap(self._manual_check_update))
-        menu.add_command(label="Hide to Tray", command=_wrap_hide)
+        menu.add_command(label=f"Lucid v{CURRENT_VERSION}", command=_schedule(self._manual_check_update))
+        menu.add_command(label="Hide to Tray", command=_schedule(self.hide))
         menu.add_separator()
-        menu.add_command(label="Quit Lucid", command=_wrap_quit)
+        menu.add_command(label="Quit Lucid", command=_schedule(self._cb_quit))
+
+        hwnd_top = None
+        try:
+            import ctypes
+            hwnd = self.winfo_id()
+            hwnd_top = ctypes.windll.user32.GetAncestor(hwnd, 2) or hwnd
+            ctypes.windll.user32.SetForegroundWindow(hwnd_top)
+        except Exception:
+            pass
 
         try:
             menu.tk_popup(event.x_root, event.y_root)
         except Exception:
             pass
+
+        if hwnd_top:
+            try:
+                import ctypes
+                ctypes.windll.user32.PostMessageW(hwnd_top, 0, 0, 0)
+            except Exception:
+                pass
 
     def set_update_info(self, info: UpdateInfo):
         """Called when update information is fetched from GitHub Releases."""

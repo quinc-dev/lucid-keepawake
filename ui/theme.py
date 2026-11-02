@@ -49,7 +49,7 @@ FONT_MONO      = "Consolas"
 
 # ─── Geometry ──────────────────────────────────────────────────────────────────
 
-WIDGET_W  = 256
+WIDGET_W  = 276
 WIDGET_H  = 68
 
 RADIUS_SM = 4

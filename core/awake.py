@@ -5,7 +5,8 @@ Prevents display & system sleep without touching mouse, keyboard, or any process
 Flags:
   ES_CONTINUOUS       = 0x80000000  (keep state until cleared)
   ES_SYSTEM_REQUIRED  = 0x00000001  (prevent system idle)
-  ES_DISPLAY_REQUIRED = 0x00000002  (prevent display sleep)
+  ES_DISPLAY_REQUIRED = 0x00000002
+ES_AWAYMODE_REQUIRED = 0x00000040  (prevent display sleep)
 """
 
 import ctypes
@@ -19,9 +20,11 @@ logger = logging.getLogger(__name__)
 ES_CONTINUOUS       = 0x80000000
 ES_SYSTEM_REQUIRED  = 0x00000001
 ES_DISPLAY_REQUIRED = 0x00000002
+ES_AWAYMODE_REQUIRED = 0x00000040
 
 # Combined flag for full awake (display + system)
 _AWAKE_FLAGS = ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
+_AWAKE_SYSTEM_FLAGS = ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED
 
 # Release flag (back to normal)
 _RELEASE_FLAGS = ES_CONTINUOUS
@@ -62,6 +65,7 @@ class AwakeController:
 
     def __init__(self):
         self._active = False
+        self._require_display = True
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -71,10 +75,13 @@ class AwakeController:
         with self._lock:
             return self._active
 
-    def activate(self) -> bool:
-        """Activate display lock. Idempotent — safe to call multiple times."""
+    def activate(self, require_display: bool = True) -> bool:
+        """Activate keep-awake lock. Idempotent — safe to call multiple times."""
         with self._lock:
+            self._require_display = require_display
             if self._active:
+                flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
+                _call_ste(flags)
                 return True
             success = self._start_awake_thread()
             if success:
@@ -91,9 +98,18 @@ class AwakeController:
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=2.0)
             self._active = False
+            self._require_display = True
             self._stop_event.clear()
             logger.info("Lucid: display lock RELEASED")
             return True
+
+    def set_display_required(self, required: bool):
+        """Switch between full display lock and background system/GPU-only lock."""
+        with self._lock:
+            self._require_display = required
+            if self._active:
+                flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
+                _call_ste(flags)
 
     def toggle(self) -> bool:
         """Toggle between active and inactive. Returns new active state."""
@@ -123,13 +139,15 @@ class AwakeController:
         Sets DISPLAY_REQUIRED + SYSTEM_REQUIRED once, then refreshes every 30s
         to ensure Windows doesn't reset the state on some builds.
         """
-        success = _call_ste(_AWAKE_FLAGS)
+        flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
+        success = _call_ste(flags)
         if not success:
             logger.warning("Initial SetThreadExecutionState call failed.")
 
         # Refresh loop — some Windows versions reset the state after inactivity
         while not self._stop_event.wait(timeout=30.0):
-            _call_ste(_AWAKE_FLAGS)
+            flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
+            _call_ste(flags)
 
         # Cleanup: release the execution state from this same thread
         _call_ste(_RELEASE_FLAGS)

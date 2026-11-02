@@ -1,21 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-
 from PyInstaller.utils.hooks import collect_all
 
 datas_ctk, binaries_ctk, hiddenimports_ctk = collect_all('customtkinter')
 datas_pystray, binaries_pystray, hiddenimports_pystray = collect_all('pystray')
 
 a = Analysis(
-    ['obf\\lucid.py'],
-    pathex=['obf'],
+    ['lucid.py'],
+    pathex=['.'],
     binaries=binaries_ctk + binaries_pystray,
-    datas=[('obf\\assets', 'assets'), ('obf\\pyarmor_runtime_000000', 'pyarmor_runtime_000000'), ('obf\\core', 'core'), ('obf\\ui', 'ui')] + datas_ctk + datas_pystray,
+    datas=[('assets', 'assets'), ('core', 'core'), ('ui', 'ui')] + datas_ctk + datas_pystray,
     hiddenimports=[
         'tkinter', '_tkinter', 'tkinter.ttk', 'tkinter.messagebox',
         'customtkinter', 'darkdetect',
-        'core', 'core.awake', 'core.timer', 'core.updater', 'core.icon',
-        'ui', 'ui.widget', 'ui.tray',
+        'core', 'core.awake', 'core.timer', 'core.updater', 'core.icon', 'core.curtain', 'core.ipc',
+        'ui', 'ui.widget', 'ui.tray', 'ui.theme',
         'PIL', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFilter', 'PIL.ImageTk', 'PIL.IcoImagePlugin', 'PIL.PngImagePlugin',
         'pystray', 'pystray._win32', 'pystray._util', 'pystray._base',
         'win32api', 'win32con', 'win32gui', 'win32process', 'win32event',

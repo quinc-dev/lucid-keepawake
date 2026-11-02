@@ -37,6 +37,7 @@ class TrayManager:
         on_quit: Callable,
         get_state: Callable[[], AppState],
         on_check_update: Optional[Callable] = None,
+        on_toggle_blackout: Optional[Callable] = None,
     ):
         self._on_show = on_show_widget
         self._on_hide = on_hide_widget
@@ -46,6 +47,7 @@ class TrayManager:
         self._on_quit = on_quit
         self._get_state = get_state
         self._on_check_update = on_check_update
+        self._on_toggle_blackout = on_toggle_blackout
         self._update_info: Optional[UpdateInfo] = None
         self._icon: Optional["pystray.Icon"] = None
         self._thread: Optional[threading.Thread] = None
@@ -125,7 +127,7 @@ class TrayManager:
         for label, duration in TIMER_PRESETS.items():
             def make_timer_handler(dur):
                 return lambda icon, item: self._on_start_timer(dur)
-            timer_items.append(TrayItem(f"⏱  {label}", make_timer_handler(duration)))
+            timer_items.append(TrayItem(f"{label}", make_timer_handler(duration)))
 
         menu_items = []
 
@@ -139,18 +141,23 @@ class TrayManager:
             )
             menu_items.append(TrayMenu.SEPARATOR)
 
+        def _blackout_handler(icon, item):
+            if self._on_toggle_blackout:
+                self._on_toggle_blackout()
+
         menu_items.extend([
-            TrayItem("👁  Show HUD", _show_handler, default=True),
-            TrayItem("    Hide to Tray", _hide_handler),
+            TrayItem("Show HUD", _show_handler, default=True),
+            TrayItem("Hide to Tray", _hide_handler),
             TrayMenu.SEPARATOR,
-            TrayItem("⚡  Stay Awake (∞)", _toggle_handler),
-            TrayItem("⏱  Set Timer", TrayMenu(*timer_items)),
-            TrayItem("⏹  Abort / Stop", _stop_handler),
+            TrayItem("Stay Awake (Infinite)", _toggle_handler),
+            TrayItem("Set Timer", TrayMenu(*timer_items)),
+            TrayItem("OLED Blackout Curtain (Ctrl+Shift+B)", _blackout_handler),
+            TrayItem("Stop Keep-Awake", _stop_handler),
             TrayMenu.SEPARATOR,
             TrayItem("Check for Updates", _check_update_handler),
             TrayItem(f"Version {CURRENT_VERSION}", lambda icon, item: None, enabled=False),
             TrayMenu.SEPARATOR,
-            TrayItem("✕  Quit Lucid", _quit_handler),
+            TrayItem("Quit Lucid", _quit_handler),
         ])
 
         return TrayMenu(*menu_items)

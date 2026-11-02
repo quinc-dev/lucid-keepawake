@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-11-02
+
+### 🚀 Added
+- **OLED Blackout Curtain (Eco GPU Mode)**: Fullscreen `#000000` blackout overlay shutting off OLED subpixels (0 nits, 0% burn-in risk) while preserving active display context so CUDA, AI vibecoding, and GPU renders run at 100% throughput.
+- **Smooth 0.4s Lens-Fade Transition**: Gentle radial vignette transition into pure black without blinding flashes or jarring cuts.
+- **Dual-Mode Instant Wake**: 0ms wake-up on keyboard input, mouse motion (>50px), or remote programmatic trigger.
+- **Model Context Protocol (MCP) Server**: Stdio JSON-RPC MCP server (`mcp_server.py`) exposing 6 autonomous tools (`lucid_status`, `lucid_blackout`, `lucid_wake`, `lucid_set_awake`, `lucid_stop`, `lucid_toggle_hud`) for Antigravity, Cursor, and Claude agents.
+- **Localhost IPC & CLI Bridge**: Fast socket daemon (`core/ipc.py`) supporting CLI controls (`--blackout`, `--wake`, `--status`, `--awake`, `--stop`).
+- **Global Shortcut**: Hotkey `Ctrl + Shift + B` to instantly engage or toggle the OLED Blackout Curtain.
+
+### 🛡️ Fixed
+- **Context Menu Auto-Dismiss**: Fixed bug where right-clicking on the HUD and selecting "Hide to Tray" left the popup menu hanging on the screen; added `<FocusOut>` auto-dismiss and explicit teardown.
+- **Minimalist Aesthetic Refinement**: Cleaned up context menu and system tray menu labels, removing cluttered emojis in favor of crisp Titanium/Zinc typography.
+
+---
+
 ## [1.0.0] - 2026-08-05
 
 ### 🚀 Added

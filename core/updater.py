@@ -15,7 +15,7 @@ from typing import Callable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.1.0"
 GITHUB_REPO = "quinc-dev/lucid-keepawake"
 RELEASES_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"

@@ -394,6 +394,7 @@ class LucidWidget(ctk.CTk):
         get_state: Callable[[], AppState],
         get_time_str: Callable[[], str],
         get_progress: Callable[[], float],
+        on_toggle_blackout: Optional[Callable] = None,
     ):
         super().__init__()
         self._cb_toggle_infinite = on_toggle_infinite
@@ -403,6 +404,7 @@ class LucidWidget(ctk.CTk):
         self._get_state = get_state
         self._get_time_str = get_time_str
         self._get_progress = get_progress
+        self._cb_toggle_blackout = on_toggle_blackout
 
         self._drag_x = 0
         self._drag_y = 0
@@ -411,6 +413,7 @@ class LucidWidget(ctk.CTk):
         self._is_closing = False
         self._ui_after_id: Optional[str] = None
         self._update_info: Optional[UpdateInfo] = None
+        self._active_menu: Optional[tk.Menu] = None
 
         ensure_icon_files()
         self._setup_window()
@@ -446,6 +449,8 @@ class LucidWidget(ctk.CTk):
         self.bind("<B1-Motion>", self._drag_move)
         self.bind("<Button-3>", self._show_context_menu)
         self.bind("<Escape>", lambda e: self.hide())
+        self.bind_all("<Control-Shift-Key-B>", lambda e: self._on_hotkey_blackout())
+        self.bind_all("<Control-Shift-Key-b>", lambda e: self._on_hotkey_blackout())
 
     # ─── UI Construction ─────────────────────────────────────────────────────
 
@@ -581,7 +586,7 @@ class LucidWidget(ctk.CTk):
         self._inf_btn = ctk.CTkButton(
             bottom,
             text="∞",
-            width=28,
+            width=24,
             height=20,
             font=ctk.CTkFont(family=theme.FONT_FAMILY, size=13, weight="bold"),
             fg_color=theme.BG_HOVER,
@@ -594,6 +599,24 @@ class LucidWidget(ctk.CTk):
         )
         self._inf_btn.pack(side="right")
         self._bind_chip_hover(self._inf_btn, "∞")
+
+        # 4. OLED Blackout Button [ OLED ]
+        self._oled_btn = ctk.CTkButton(
+            bottom,
+            text="OLED",
+            width=36,
+            height=20,
+            font=ctk.CTkFont(family=theme.FONT_MONO, size=8, weight="bold"),
+            fg_color=theme.BG_HOVER,
+            text_color=theme.INK_SECONDARY,
+            hover_color=theme.BG_PRESSED,
+            border_width=1,
+            border_color=theme.BORDER_GLASS,
+            corner_radius=theme.RADIUS_SM,
+            command=self._on_oled_click,
+        )
+        self._oled_btn.pack(side="right", padx=(0, 3))
+        self._bind_chip_hover(self._oled_btn, "OLED")
 
     def _bind_chip_hover(self, btn: ctk.CTkButton, key: str):
         """Binds reactive hover illumination to cyber buttons."""
@@ -641,6 +664,9 @@ class LucidWidget(ctk.CTk):
             self._active_preset = "∞"
             self._cb_toggle_infinite()
 
+    def _on_oled_click(self):
+        self._on_hotkey_blackout()
+
     def _on_preset_click(self, label: str, duration: int):
         state = self._get_state()
         if state != AppState.IDLE and self._active_preset == label:
@@ -663,7 +689,24 @@ class LucidWidget(ctk.CTk):
 
     # ─── Context Menu ────────────────────────────────────────────────────────
 
+    def _close_context_menu(self):
+        if hasattr(self, "_active_menu") and self._active_menu:
+            try:
+                self._active_menu.unpost()
+            except Exception:
+                pass
+            try:
+                self._active_menu.destroy()
+            except Exception:
+                pass
+            self._active_menu = None
+
+    def _on_hotkey_blackout(self):
+        if hasattr(self, "_cb_toggle_blackout") and self._cb_toggle_blackout:
+            self._cb_toggle_blackout()
+
     def _show_context_menu(self, event):
+        self._close_context_menu()
         state = self._get_state()
         is_active = state != AppState.IDLE
 
@@ -677,36 +720,51 @@ class LucidWidget(ctk.CTk):
             bd=0,
             relief="flat",
         )
+        self._active_menu = menu
+
+        def _wrap(callback):
+            def handler():
+                self._close_context_menu()
+                callback()
+            return handler
+
+        def _wrap_hide():
+            self._close_context_menu()
+            self.hide()
+
+        def _wrap_quit():
+            self._close_context_menu()
+            self.after(10, self._cb_quit)
+
+        def _wrap_blackout():
+            self._close_context_menu()
+            self._on_hotkey_blackout()
 
         if self._update_info and self._update_info.has_update:
             menu.add_command(
-                label=f"✦  Update to v{self._update_info.latest_version} Available",
-                command=lambda: open_release_page(self._update_info.html_url),
+                label=f"Update to v{self._update_info.latest_version}",
+                command=_wrap(lambda: open_release_page(self._update_info.html_url)),
                 foreground="#10B981",
                 activeforeground="#6EE7B7",
             )
             menu.add_separator()
 
         if is_active:
-            menu.add_command(label="■  Abort / Stop", command=self._cb_stop)
+            menu.add_command(label="Stop Keep-Awake", command=_wrap(self._cb_stop))
         else:
-            menu.add_command(label="∞  Stay Awake", command=self._cb_toggle_infinite)
+            menu.add_command(label="Stay Awake (Infinite)", command=_wrap(self._cb_toggle_infinite))
 
+        menu.add_command(label="OLED Blackout Curtain", command=_wrap_blackout, accelerator="Ctrl+Shift+B")
         menu.add_separator()
-        menu.add_command(label=f"Lucid v{CURRENT_VERSION} (Check Updates)", command=self._manual_check_update)
-        menu.add_command(label="Hide to Tray", command=self.hide)
+        menu.add_command(label=f"Lucid v{CURRENT_VERSION}", command=_wrap(self._manual_check_update))
+        menu.add_command(label="Hide to Tray", command=_wrap_hide)
         menu.add_separator()
-        menu.add_command(label="Quit Lucid", command=lambda: self.after(10, self._cb_quit))
+        menu.add_command(label="Quit Lucid", command=_wrap_quit)
 
         try:
             menu.tk_popup(event.x_root, event.y_root)
         except Exception:
             pass
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
 
     def set_update_info(self, info: UpdateInfo):
         """Called when update information is fetched from GitHub Releases."""
@@ -861,6 +919,12 @@ class LucidWidget(ctk.CTk):
             text_color=theme.INK_SECONDARY,
             border_color=theme.BORDER_GLASS,
         )
+        if hasattr(self, "_oled_btn") and self._oled_btn:
+            self._oled_btn.configure(
+                fg_color=theme.BG_HOVER,
+                text_color=theme.INK_SECONDARY,
+                border_color=theme.BORDER_GLASS,
+            )
 
     # ─── Public API ──────────────────────────────────────────────────────────
 
@@ -870,6 +934,7 @@ class LucidWidget(ctk.CTk):
             self.attributes("-topmost", True)
 
     def hide(self):
+        self._close_context_menu()
         if not self._is_closing:
             self.withdraw()
 

@@ -490,11 +490,20 @@ class CyberContextMenu(tk.Toplevel):
 
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
-        if x + w > sw:
-            x = sw - w - 6
-        if y + h > sh:
-            y = sh - h - 6
-        self.geometry(f"+{x}+{y}")
+
+        # Intelligent offset: float cleanly outside the HUD (above by default, below if at screen top)
+        # Guarantees zero overlapping / obscuring of the widget controls
+        wx = master.winfo_rootx()
+        wy = master.winfo_rooty()
+        wh = master.winfo_height()
+
+        if wy - h - 8 >= 0:
+            target_y = wy - h - 8
+        else:
+            target_y = wy + wh + 8
+
+        target_x = max(8, min(x - 16, sw - w - 8))
+        self.geometry(f"+{target_x}+{target_y}")
 
         self.focus_force()
         self.bind("<Escape>", lambda e: self._close())

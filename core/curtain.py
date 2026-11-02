@@ -69,12 +69,16 @@ class OledCurtain:
         self._window.title("Lucid OLED Curtain")
         self._window.overrideredirect(True)
         self._window.attributes("-topmost", True)
+        try:
+            self._window.attributes("-fullscreen", True)
+        except Exception:
+            pass
         self._window.configure(bg="#000000")
         self._window.geometry(f"{vw}x{vh}+{vx}+{vy}")
+        self._window.lift()
 
-        # Start with transparent alpha for smooth transition
         try:
-            self._window.attributes("-alpha", 0.0)
+            self._window.attributes("-alpha", 1.0)
         except Exception:
             pass
 
@@ -86,11 +90,8 @@ class OledCurtain:
         )
         self._canvas.pack(fill="both", expand=True)
 
-        # Record initial mouse position for threshold checking
         try:
-            pt = ctypes.wintypes.POINT()
-            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-            self._start_mouse_pos = (pt.x, pt.y)
+            self._start_mouse_pos = (self._window.winfo_pointerx(), self._window.winfo_pointery())
         except Exception:
             self._start_mouse_pos = (vw // 2, vh // 2)
 
@@ -128,22 +129,8 @@ class OledCurtain:
             font=("JetBrains Mono", 8)
         )
 
-        alphas = [0.2, 0.45, 0.75, 0.92, 1.0]
-
-        def step(idx=0):
-            if not self._is_active or not self._window:
-                return
-            if idx < len(alphas):
-                try:
-                    self._window.attributes("-alpha", alphas[idx])
-                except Exception:
-                    pass
-                self._anim_timer_id = self._root.after(45, lambda: step(idx + 1))
-            else:
-                # After 500ms of display, dissolve the text to complete pure #000000
-                self._anim_timer_id = self._root.after(550, self._finalize_pure_black)
-
-        step(0)
+        # After 800ms of indicator, dissolve the text to complete pure #000000
+        self._anim_timer_id = self._root.after(800, self._finalize_pure_black)
 
     def _finalize_pure_black(self):
         """Clear all canvas items to guarantee 100% pure black OLED pixels and arm wake detection."""
@@ -155,19 +142,18 @@ class OledCurtain:
     def _arm(self):
         self._armed = True
         try:
-            pt = ctypes.wintypes.POINT()
-            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-            self._start_mouse_pos = (pt.x, pt.y)
+            if self._window:
+                self._start_mouse_pos = (self._window.winfo_pointerx(), self._window.winfo_pointery())
         except Exception:
             pass
 
     def _on_mouse_move(self, event):
-        """Wake only when mouse moves more than 60px after arming delay."""
+        """Wake only when mouse moves more than 120px after arming delay."""
         if not self._is_active or not getattr(self, "_armed", False):
             return
         dx = abs(event.x_root - self._start_mouse_pos[0])
         dy = abs(event.y_root - self._start_mouse_pos[1])
-        if (dx + dy) > 60:
+        if (dx + dy) > 120:
             self.wake()
 
     def _on_input_event(self, event):

@@ -126,6 +126,7 @@ _HUD_TICK_OFFSET = (_HUD_MATRIX_SEED[0] ^ _HUD_MATRIX_SEED[-1]) & 0x07  # 2
 class RadarBlip(tk.Canvas):
     """
     Cyber-HUD radar pulse with dual-wave expanding holographic rings and hot core.
+    Zero-garbage-collection canvas item recycling for buttery smooth 60fps.
     """
 
     DOT_R = 3.5
@@ -147,6 +148,23 @@ class RadarBlip(tk.Canvas):
         self._phase = 0.0
         self._animating = False
         self._after_id: Optional[str] = None
+
+        cx, cy, r = self._cx, self._cy, self.DOT_R
+
+        # Pre-allocate canvas items once:
+        self._item_idle_ring = self.create_oval(cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1,
+                                                outline="#1E293B", width=1)
+        self._item_idle_dot = self.create_oval(cx - r, cy - r, cx + r, cy + r,
+                                               fill=theme.ACCENT_IDLE, outline="")
+
+        self._item_wave1 = self.create_oval(0, 0, 0, 0, fill="", outline="", state="hidden")
+        self._item_wave2 = self.create_oval(0, 0, 0, 0, fill="", outline="", state="hidden")
+
+        self._item_halo = self.create_oval(cx - r - 0.5, cy - r - 0.5, cx + r + 0.5, cy + r + 0.5,
+                                           fill=theme.ACCENT_ACTIVE, outline="", state="hidden")
+        r_hot = 1.8
+        self._item_spark = self.create_oval(cx - r_hot, cy - r_hot, cx + r_hot, cy + r_hot,
+                                            fill=theme.ACCENT_ACTIVE_INK, outline="", state="hidden")
         self._draw_idle()
 
     def set_active(self, active: bool):
@@ -166,6 +184,10 @@ class RadarBlip(tk.Canvas):
         if self._animating:
             return
         self._animating = True
+        self.itemconfigure(self._item_idle_ring, state="hidden")
+        self.itemconfigure(self._item_idle_dot, state="hidden")
+        self.itemconfigure(self._item_halo, state="normal")
+        self.itemconfigure(self._item_spark, state="normal")
         self._tick()
 
     def _stop_animation(self):
@@ -186,17 +208,14 @@ class RadarBlip(tk.Canvas):
             self._after_id = self.after(33, self._tick)
 
     def _draw_idle(self):
-        self.delete("all")
-        cx, cy, r = self._cx, self._cy, self.DOT_R
-        # Outer subtle ring
-        self.create_oval(cx - r - 1, cy - r - 1, cx + r + 1, cy + r + 1,
-                         outline="#1E293B", width=1)
-        # Standby steel dot
-        self.create_oval(cx - r, cy - r, cx + r, cy + r,
-                         fill=theme.ACCENT_IDLE, outline="")
+        self.itemconfigure(self._item_wave1, state="hidden")
+        self.itemconfigure(self._item_wave2, state="hidden")
+        self.itemconfigure(self._item_halo, state="hidden")
+        self.itemconfigure(self._item_spark, state="hidden")
+        self.itemconfigure(self._item_idle_ring, state="normal")
+        self.itemconfigure(self._item_idle_dot, state="normal")
 
     def _draw_active(self):
-        self.delete("all")
         cx, cy = self._cx, self._cy
         p = self._phase
 
@@ -205,8 +224,10 @@ class RadarBlip(tk.Canvas):
         a1 = int(240 * (1.0 - p) ** 1.5 * 0.45)
         col1 = self._blend(16, 185, 129, a1)
         if col1:
-            self.create_oval(cx - r1, cy - r1, cx + r1, cy + r1,
-                             fill=col1, outline="")
+            self.coords(self._item_wave1, cx - r1, cy - r1, cx + r1, cy + r1)
+            self.itemconfigure(self._item_wave1, fill=col1, state="normal")
+        else:
+            self.itemconfigure(self._item_wave1, state="hidden")
 
         # Wave 2: Secondary offset echoing sonar ring
         p2 = (p + 0.5) % 1.0
@@ -214,18 +235,10 @@ class RadarBlip(tk.Canvas):
         a2 = int(200 * (1.0 - p2) ** 1.5 * 0.30)
         col2 = self._blend(16, 185, 129, a2)
         if col2:
-            self.create_oval(cx - r2, cy - r2, cx + r2, cy + r2,
-                             fill=col2, outline="")
-
-        # Core outer halo
-        r = self.DOT_R
-        self.create_oval(cx - r - 0.5, cy - r - 0.5, cx + r + 0.5, cy + r + 0.5,
-                         fill=theme.ACCENT_ACTIVE, outline="")
-
-        # Core inner hot photon spark
-        r_hot = 1.8
-        self.create_oval(cx - r_hot, cy - r_hot, cx + r_hot, cy + r_hot,
-                         fill=theme.ACCENT_ACTIVE_INK, outline="")
+            self.coords(self._item_wave2, cx - r2, cy - r2, cx + r2, cy + r2)
+            self.itemconfigure(self._item_wave2, fill=col2, state="normal")
+        else:
+            self.itemconfigure(self._item_wave2, state="hidden")
 
     @staticmethod
     def _blend(r: int, g: int, b: int, a: int) -> Optional[str]:
@@ -246,8 +259,8 @@ class RadarBlip(tk.Canvas):
 
 class LaserBar(tk.Canvas):
     """
-    Fluid 60fps Laser Beam with smooth exponential lerp interpolation,
-    laser ignition shoot-out, and glowing optical photon tip.
+    Fluid 60fps Laser Beam with smooth exponential lerp interpolation.
+    Pre-allocated canvas items with zero allocation in tick loop.
     """
 
     def __init__(self, parent, height: int = 4, **kwargs):
@@ -265,6 +278,13 @@ class LaserBar(tk.Canvas):
         self._glow_phase: float = 0.0
         self._animating: bool = False
         self._after_id: Optional[str] = None
+
+        # Pre-allocate canvas items
+        self._item_track = self.create_line(0, 0, 0, 0, fill=theme.LASER_TRACK, width=1)
+        self._item_beam = self.create_line(0, 0, 0, 0, fill=theme.LASER_FILL, width=2, state="hidden")
+        self._item_halo = self.create_oval(0, 0, 0, 0, fill="#065F46", outline="", state="hidden")
+        self._item_spark = self.create_oval(0, 0, 0, 0, fill=theme.ACCENT_ACTIVE_INK, outline="", state="hidden")
+
         self.bind("<Configure>", lambda e: self._draw())
 
     def set_state(self, state: AppState, progress: float = 0.0):
@@ -276,12 +296,12 @@ class LaserBar(tk.Canvas):
         elif state == AppState.ACTIVE_INFINITE:
             self._target_fraction = 1.0
             if prev_mode == AppState.IDLE:
-                self._current_fraction = 0.0  # Smooth beam shot from 0 to full
+                self._current_fraction = 0.0
         elif state == AppState.ACTIVE_TIMER:
             rem = max(0.0, min(1.0, 1.0 - progress))
             self._target_fraction = rem
             if prev_mode == AppState.IDLE:
-                self._current_fraction = 0.0  # Smooth laser shoot out!
+                self._current_fraction = 0.0
 
         if not self._animating:
             self._animating = True
@@ -291,7 +311,6 @@ class LaserBar(tk.Canvas):
         if not self._animating:
             return
 
-        # Smooth exponential lerp interpolation (ease-out physics)
         diff = self._target_fraction - self._current_fraction
         if abs(diff) > 0.001:
             self._current_fraction += diff * 0.18
@@ -302,17 +321,15 @@ class LaserBar(tk.Canvas):
         self._glow_phase = (self._glow_phase + 0.06) % 1.0
         self._draw()
 
-        # Stop animation only when IDLE and fully collapsed to 0
         if self._mode == AppState.IDLE and self._current_fraction <= 0.002:
             self._current_fraction = 0.0
             self._animating = False
             self._draw()
             return
 
-        self._after_id = self.after(20, self._tick)
+        self._after_id = self.after(33, self._tick)
 
     def _draw(self):
-        self.delete("all")
         w = self.winfo_width()
         h = self.winfo_height()
         if w <= 1:
@@ -320,41 +337,30 @@ class LaserBar(tk.Canvas):
 
         mid_y = h // 2
 
-        # 1. Subtle baseline guide rail
-        self.create_line(0, mid_y, w, mid_y, fill=theme.LASER_TRACK, width=1)
+        # 1. Baseline guide rail
+        self.coords(self._item_track, 0, mid_y, w, mid_y)
 
-        # 2. Render interpolated glowing laser beam
+        # 2. Active glowing laser beam
         active_w = int(w * self._current_fraction)
         if active_w > 0:
-            # Glowing core beam
-            self.create_line(0, mid_y, active_w, mid_y, fill=theme.LASER_FILL, width=2)
+            self.coords(self._item_beam, 0, mid_y, active_w, mid_y)
+            self.itemconfigure(self._item_beam, state="normal")
 
             if self._mode == AppState.ACTIVE_INFINITE:
-                # Sweeping laser photon wave scanning across beam
                 scan_x = int(active_w * (0.5 + 0.5 * math.sin(self._scan_phase * 2 * math.pi)))
-                self.create_oval(
-                    scan_x - 3, mid_y - 1.5,
-                    scan_x + 3, mid_y + 1.5,
-                    fill=theme.ACCENT_ACTIVE_INK,
-                    outline="",
-                )
+                self.coords(self._item_spark, scan_x - 3, mid_y - 1.5, scan_x + 3, mid_y + 1.5)
+                self.itemconfigure(self._item_spark, state="normal")
+                self.itemconfigure(self._item_halo, state="hidden")
             else:
-                # Leading edge optical photon head with pulsating halo
                 glow_r = 3.5 + 1.0 * math.sin(self._glow_phase * 2 * math.pi)
-                # Outer photon halo
-                self.create_oval(
-                    active_w - glow_r, mid_y - glow_r / 2,
-                    active_w + glow_r, mid_y + glow_r / 2,
-                    fill="#065F46",
-                    outline="",
-                )
-                # Center hot photon spark
-                self.create_oval(
-                    active_w - 2.5, mid_y - 1.5,
-                    active_w + 2.5, mid_y + 1.5,
-                    fill=theme.ACCENT_ACTIVE_INK,
-                    outline="",
-                )
+                self.coords(self._item_halo, active_w - glow_r, mid_y - glow_r / 2, active_w + glow_r, mid_y + glow_r / 2)
+                self.coords(self._item_spark, active_w - 2.5, mid_y - 1.5, active_w + 2.5, mid_y + 1.5)
+                self.itemconfigure(self._item_halo, state="normal")
+                self.itemconfigure(self._item_spark, state="normal")
+        else:
+            self.itemconfigure(self._item_beam, state="hidden")
+            self.itemconfigure(self._item_halo, state="hidden")
+            self.itemconfigure(self._item_spark, state="hidden")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -628,6 +634,9 @@ class LucidWidget(ctk.CTk):
         self._active_preset: Optional[str] = None
         self._is_closing = False
         self._ui_after_id: Optional[str] = None
+        self._last_state_label_text: str = ""
+        self._last_action_btn_text: str = ""
+        self._last_drag_time: float = 0.0
         self._update_info: Optional[UpdateInfo] = None
         self._active_menu: Optional[tk.Menu] = None
 
@@ -790,33 +799,54 @@ class LucidWidget(ctk.CTk):
             self._chip_btns[label] = btn
             self._bind_chip_hover(btn, label)
 
-        # 2. Custom Time Entry [_min]
-        self._custom_entry = ctk.CTkEntry(
+        # 2. Custom Time Entry [ min ]
+        self._entry_frame = tk.Frame(
             bottom,
-            width=38,
-            height=20,
-            placeholder_text="min",
-            font=ctk.CTkFont(family=theme.FONT_MONO, size=8),
-            fg_color=theme.BG_HOVER,
-            border_color=theme.BORDER_SUBTLE,
-            text_color=theme.INK_PRIMARY,
-            placeholder_text_color=theme.INK_MUTED,
-            corner_radius=theme.RADIUS_SM,
+            bg=theme.BG_HOVER,
+            highlightthickness=1,
+            highlightbackground=theme.BORDER_SUBTLE,
+            cursor="xterm",
+        )
+        self._entry_frame.pack(side="left", padx=(1, 2))
+
+        self._custom_entry = tk.Entry(
+            self._entry_frame,
+            width=4,
+            font=(theme.FONT_MONO, 9),
+            bg=theme.BG_HOVER,
+            fg=theme.INK_MUTED,
+            insertbackground="#10B981",
+            bd=0,
+            highlightthickness=0,
             justify="center",
         )
-        self._custom_entry.pack(side="left", padx=(1, 2))
+        self._custom_entry.insert(0, "min")
+        self._custom_entry.pack(padx=2, pady=1)
+
+        def _on_entry_focus_in(e=None):
+            if self._custom_entry.get().strip() == "min":
+                self._custom_entry.delete(0, "end")
+            self._custom_entry.configure(fg=theme.INK_PRIMARY)
+            self._entry_frame.configure(highlightbackground="#10B981")
+
+        def _on_entry_focus_out(e=None):
+            if not self._custom_entry.get().strip():
+                self._custom_entry.delete(0, "end")
+                self._custom_entry.insert(0, "min")
+                self._custom_entry.configure(fg=theme.INK_MUTED)
+            self._entry_frame.configure(highlightbackground=theme.BORDER_SUBTLE)
 
         def _on_entry_click(e=None):
             self.focus_force()
             self._custom_entry.focus_set()
-            if hasattr(self._custom_entry, "_entry"):
-                self._custom_entry._entry.focus_set()
+            _on_entry_focus_in()
+            return "break"
 
+        self._custom_entry.bind("<FocusIn>", _on_entry_focus_in)
+        self._custom_entry.bind("<FocusOut>", _on_entry_focus_out)
         self._custom_entry.bind("<Button-1>", _on_entry_click)
+        self._entry_frame.bind("<Button-1>", _on_entry_click)
         self._custom_entry.bind("<Return>", lambda e: self._on_custom_submit())
-        if hasattr(self._custom_entry, "_entry"):
-            self._custom_entry._entry.bind("<Button-1>", _on_entry_click)
-            self._custom_entry._entry.bind("<Return>", lambda e: self._on_custom_submit())
 
         # Spacer
         tk.Frame(bottom, bg=theme.BG_WIDGET).pack(side="left", fill="x", expand=True)
@@ -881,6 +911,11 @@ class LucidWidget(ctk.CTk):
         self._drag_y = event.y_root - self.winfo_y()
 
     def _drag_move(self, event):
+        import time
+        now = time.monotonic()
+        if now - self._last_drag_time < 0.016:
+            return
+        self._last_drag_time = now
         self.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
 
     # ─── Control Handlers ────────────────────────────────────────────────────
@@ -917,15 +952,21 @@ class LucidWidget(ctk.CTk):
             self._cb_start_timer(duration)
 
     def _on_custom_submit(self):
-        val = self._custom_entry.get()
+        val = self._custom_entry.get().strip()
+        if not val or val == "min":
+            return
         seconds = parse_duration(val)
         if seconds and seconds > 0:
             self._active_preset = "custom"
             self._cb_start_timer(seconds)
             self._custom_entry.delete(0, "end")
+            self._custom_entry.insert(0, "min")
+            self._custom_entry.configure(fg=theme.INK_MUTED)
+            self._entry_frame.configure(highlightbackground=theme.BORDER_SUBTLE)
+            self.focus_set()
         else:
-            self._custom_entry.configure(border_color="#EF4444")
-            self.after(500, lambda: self._custom_entry.configure(border_color=theme.BORDER_SUBTLE))
+            self._entry_frame.configure(highlightbackground="#EF4444")
+            self.after(500, lambda: self._entry_frame.configure(highlightbackground=theme.BORDER_SUBTLE))
 
     # ─── Context Menu ────────────────────────────────────────────────────────
 
@@ -1018,50 +1059,62 @@ class LucidWidget(ctk.CTk):
                 self._apply_state(state)
                 self._current_state = state
 
-            # Update live state label, action button & laser bar
+            # Update live state label, action button & laser bar ONLY when values change
             if state == AppState.ACTIVE_TIMER:
-                self._state_label.configure(
-                    text=time_str,
-                    fg=theme.ACCENT_ACTIVE,
-                    font=(theme.FONT_MONO, 12, "bold"),
-                )
-                self._action_btn.configure(
-                    text="■ STOP",
-                    fg_color="#7F1D1D",
-                    text_color="#FCA5A5",
-                    border_color="#EF4444",
-                    hover_color="#991B1B",
-                )
+                if self._last_state_label_text != time_str:
+                    self._last_state_label_text = time_str
+                    self._state_label.configure(
+                        text=time_str,
+                        fg=theme.ACCENT_ACTIVE,
+                        font=(theme.FONT_MONO, 12, "bold"),
+                    )
+                if self._last_action_btn_text != "■ STOP":
+                    self._last_action_btn_text = "■ STOP"
+                    self._action_btn.configure(
+                        text="■ STOP",
+                        fg_color="#7F1D1D",
+                        text_color="#FCA5A5",
+                        border_color="#EF4444",
+                        hover_color="#991B1B",
+                    )
                 self._laser.set_state(state, progress)
 
             elif state == AppState.ACTIVE_INFINITE:
-                self._state_label.configure(
-                    text="AWAKE ∞",
-                    fg=theme.ACCENT_ACTIVE,
-                    font=(theme.FONT_MONO, 11, "bold"),
-                )
-                self._action_btn.configure(
-                    text="■ STOP",
-                    fg_color="#7F1D1D",
-                    text_color="#FCA5A5",
-                    border_color="#EF4444",
-                    hover_color="#991B1B",
-                )
+                if self._last_state_label_text != "AWAKE ∞":
+                    self._last_state_label_text = "AWAKE ∞"
+                    self._state_label.configure(
+                        text="AWAKE ∞",
+                        fg=theme.ACCENT_ACTIVE,
+                        font=(theme.FONT_MONO, 11, "bold"),
+                    )
+                if self._last_action_btn_text != "■ STOP":
+                    self._last_action_btn_text = "■ STOP"
+                    self._action_btn.configure(
+                        text="■ STOP",
+                        fg_color="#7F1D1D",
+                        text_color="#FCA5A5",
+                        border_color="#EF4444",
+                        hover_color="#991B1B",
+                    )
                 self._laser.set_state(state, 0.0)
 
             else:
-                self._state_label.configure(
-                    text="STANDBY",
-                    fg=theme.INK_SECONDARY,
-                    font=(theme.FONT_MONO, 11, "bold"),
-                )
-                self._action_btn.configure(
-                    text="▶ ON",
-                    fg_color=theme.BG_HOVER,
-                    text_color=theme.INK_SECONDARY,
-                    border_color=theme.BORDER_GLASS,
-                    hover_color=theme.BG_PRESSED,
-                )
+                if self._last_state_label_text != "STANDBY":
+                    self._last_state_label_text = "STANDBY"
+                    self._state_label.configure(
+                        text="STANDBY",
+                        fg=theme.INK_SECONDARY,
+                        font=(theme.FONT_MONO, 11, "bold"),
+                    )
+                if self._last_action_btn_text != "▶ ON":
+                    self._last_action_btn_text = "▶ ON"
+                    self._action_btn.configure(
+                        text="▶ ON",
+                        fg_color=theme.BG_HOVER,
+                        text_color=theme.INK_SECONDARY,
+                        border_color=theme.BORDER_GLASS,
+                        hover_color=theme.BG_PRESSED,
+                    )
                 self._laser.set_state(state, 0.0)
 
         except Exception as e:

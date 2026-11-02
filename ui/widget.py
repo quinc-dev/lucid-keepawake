@@ -507,7 +507,7 @@ class CyberContextMenu(tk.Toplevel):
         # Clamp safely within visible display boundaries
         target_x = max(4, min(target_x, sw - w - 4))
         target_y = max(4, min(target_y, sh - h - 4))
-        self.geometry(f"+{target_x}+{target_y}")
+        self.geometry(f"{w}x{h}+{target_x}+{target_y}")
 
         self.focus_force()
         self.bind("<Escape>", lambda e: self._close())
@@ -661,6 +661,18 @@ class LucidWidget(ctk.CTk):
         self.geometry(f"{w}x{h}+{sw - w - 24}+{sh - h - 64}")
         self.resizable(False, False)
 
+        # Make borderless window activatable on Windows so Entry can receive typing focus
+        self.update_idletasks()
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetParent(self.winfo_id()) or self.winfo_id()
+            stylew = user32.GetWindowLongW(hwnd, -20)
+            stylew = (stylew & ~0x00000080) | 0x00040000
+            user32.SetWindowLongW(hwnd, -20, stylew)
+        except Exception as e:
+            logger.debug(f"Window style notice: {e}")
+
         self.bind("<ButtonPress-1>", self._drag_start)
         self.bind("<B1-Motion>", self._drag_move)
         self.bind("<Button-3>", self._show_context_menu)
@@ -794,23 +806,16 @@ class LucidWidget(ctk.CTk):
         )
         self._custom_entry.pack(side="left", padx=(1, 2))
 
-        def _focus_entry(e=None):
+        def _on_entry_click(e=None):
             self.focus_force()
             self._custom_entry.focus_set()
-            try:
-                import ctypes
-                hwnd = self.winfo_id()
-                top_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 2) or hwnd
-                _force_window_foreground(top_hwnd)
-                ctypes.windll.user32.SetFocus(top_hwnd)
-            except Exception:
-                pass
+            if hasattr(self._custom_entry, "_entry"):
+                self._custom_entry._entry.focus_set()
 
-        self._custom_entry.bind("<Button-1>", _focus_entry)
+        self._custom_entry.bind("<Button-1>", _on_entry_click)
         self._custom_entry.bind("<Return>", lambda e: self._on_custom_submit())
         if hasattr(self._custom_entry, "_entry"):
-            self._custom_entry._entry.bind("<Button-1>", _focus_entry)
-            self._custom_entry._entry.bind("<FocusIn>", _focus_entry)
+            self._custom_entry._entry.bind("<Button-1>", _on_entry_click)
             self._custom_entry._entry.bind("<Return>", lambda e: self._on_custom_submit())
 
         # Spacer

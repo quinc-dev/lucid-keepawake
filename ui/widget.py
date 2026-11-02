@@ -408,6 +408,114 @@ class CornerBracket(tk.Canvas):
 # LucidWidget  (Cyber-HUD Minimalist)
 # ─────────────────────────────────────────────────────────────────────────────
 
+class CyberContextMenu(ctk.CTkToplevel):
+    """
+    Titanium/Zinc Cyber Context Card.
+    Custom frameless floating card replacing legacy Win32 tk.Menu.
+    Guarantees 100% first-click activation, smooth hover styling,
+    and instantaneous, leak-free teardown.
+    """
+
+    def __init__(self, master: ctk.CTk, x: int, y: int, items: list):
+        super().__init__(master)
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.configure(fg_color=theme.BG_POPUP)
+        self._master = master
+        self._is_closed = False
+
+        card = ctk.CTkFrame(
+            self,
+            fg_color=theme.BG_POPUP,
+            corner_radius=4,
+            border_width=1,
+            border_color=theme.BORDER_SUBTLE,
+        )
+        card.pack(fill="both", expand=True, padx=1, pady=1)
+
+        for item in items:
+            if item == "---":
+                sep = ctk.CTkFrame(card, height=1, fg_color=theme.BORDER_GLASS, corner_radius=0)
+                sep.pack(fill="x", padx=8, pady=3)
+            else:
+                label, cmd, color, accel = item
+                row = ctk.CTkFrame(card, fg_color="transparent", height=24)
+                row.pack(fill="x", padx=4, pady=1)
+
+                btn = ctk.CTkButton(
+                    row,
+                    text=label,
+                    anchor="w",
+                    fg_color="transparent",
+                    text_color=color or theme.INK_PRIMARY,
+                    hover_color=theme.BG_HOVER,
+                    font=(theme.FONT_MONO, 11),
+                    height=24,
+                    corner_radius=2,
+                    command=lambda c=cmd: self._select(c),
+                )
+                btn.pack(side="left", fill="x", expand=True)
+
+                if accel:
+                    lbl = ctk.CTkLabel(
+                        row,
+                        text=accel,
+                        font=(theme.FONT_MONO, 9),
+                        text_color=theme.INK_MUTED,
+                    )
+                    lbl.pack(side="right", padx=6)
+
+        self.update_idletasks()
+        w = max(card.winfo_reqwidth() + 8, 220)
+        h = card.winfo_reqheight() + 8
+
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        if x + w > sw:
+            x = sw - w - 8
+        if y + h > sh:
+            y = sh - h - 8
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
+        self.focus_force()
+        self.bind("<Escape>", lambda e: self._close())
+        self.after(50, self._setup_dismiss)
+
+    def _setup_dismiss(self):
+        try:
+            self.grab_set()
+            self.bind("<ButtonPress>", self._on_click_check)
+        except Exception:
+            pass
+
+    def _on_click_check(self, event):
+        x, y = event.x_root, event.y_root
+        wx = self.winfo_rootx()
+        wy = self.winfo_rooty()
+        ww = self.winfo_width()
+        wh = self.winfo_height()
+        if not (wx <= x <= wx + ww and wy <= y <= wy + wh):
+            self._close()
+
+    def _close(self):
+        if self._is_closed:
+            return
+        self._is_closed = True
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+    def _select(self, cmd):
+        self._close()
+        if cmd:
+            self._master.after(20, cmd)
+
+
 class LucidWidget(ctk.CTk):
     """
     Cyber-HUD Minimalist Floating Widget (256×68px) with 4-Corner Accent Brackets.
@@ -726,20 +834,14 @@ class LucidWidget(ctk.CTk):
     # ─── Context Menu ────────────────────────────────────────────────────────
 
     def _close_context_menu(self):
-        try:
-            import ctypes
-            ctypes.windll.user32.EndMenu()
-        except Exception:
-            pass
         if hasattr(self, "_active_menu") and self._active_menu:
             try:
-                self._active_menu.unpost()
+                self._active_menu._close()
             except Exception:
-                pass
-            try:
-                self._active_menu.destroy()
-            except Exception:
-                pass
+                try:
+                    self._active_menu.destroy()
+                except Exception:
+                    pass
             self._active_menu = None
 
     def _on_hotkey_blackout(self):
@@ -747,86 +849,35 @@ class LucidWidget(ctk.CTk):
             self._cb_toggle_blackout()
 
     def _show_context_menu(self, event):
+        self._close_context_menu()
         self.focus_force()
-        hwnd_top = None
-        try:
-            import ctypes
-            hwnd = self.winfo_id()
-            hwnd_top = ctypes.windll.user32.GetAncestor(hwnd, 2) or hwnd
-            _force_window_foreground(hwnd_top)
-        except Exception:
-            pass
 
         state = self._get_state()
         is_active = state != AppState.IDLE
 
-        chosen_action = [None]
-
-        def _pick(callback):
-            def handler():
-                chosen_action[0] = callback
-            return handler
-
-        menu = tk.Menu(
-            self,
-            tearoff=0,
-            bg=theme.BG_POPUP,
-            fg=theme.INK_PRIMARY,
-            activebackground=theme.BG_HOVER,
-            activeforeground=theme.INK_PRIMARY,
-            bd=0,
-            relief="flat",
-        )
-        self._active_menu = menu
-
+        items = []
         if self._update_info and self._update_info.has_update:
-            menu.add_command(
-                label=f"Update to v{self._update_info.latest_version}",
-                command=_pick(lambda: open_release_page(self._update_info.html_url)),
-                foreground="#10B981",
-                activeforeground="#6EE7B7",
-            )
-            menu.add_separator()
+            items.append((
+                f"Update to v{self._update_info.latest_version}",
+                lambda: open_release_page(self._update_info.html_url),
+                "#10B981",
+                None,
+            ))
+            items.append("---")
 
         if is_active:
-            menu.add_command(label="Stop Keep-Awake", command=_pick(self._cb_stop))
+            items.append(("Stop Keep-Awake", self._cb_stop, "#EF4444", None))
         else:
-            menu.add_command(label="Stay Awake (Infinite)", command=_pick(self._cb_toggle_infinite))
+            items.append(("Stay Awake (Infinite)", self._cb_toggle_infinite, "#10B981", None))
 
-        menu.add_command(label="OLED Blackout Curtain", command=_pick(self._on_hotkey_blackout), accelerator="Ctrl+Shift+B")
-        menu.add_separator()
-        menu.add_command(label=f"Lucid v{CURRENT_VERSION}", command=_pick(self._manual_check_update))
-        menu.add_command(label="Hide to Tray", command=_pick(self.hide))
-        menu.add_separator()
-        menu.add_command(label="Quit Lucid", command=_pick(self._cb_quit))
+        items.append(("OLED Blackout Curtain", self._on_hotkey_blackout, theme.INK_PRIMARY, "Ctrl+Shift+B"))
+        items.append("---")
+        items.append((f"Lucid v{CURRENT_VERSION}", self._manual_check_update, theme.INK_MUTED, None))
+        items.append(("Hide to Tray", self.hide, theme.INK_SECONDARY, None))
+        items.append("---")
+        items.append(("Quit Lucid", self._cb_quit, "#EF4444", None))
 
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        except Exception:
-            pass
-        finally:
-            try:
-                menu.unpost()
-            except Exception:
-                pass
-            try:
-                menu.destroy()
-            except Exception:
-                pass
-            self._active_menu = None
-            if hwnd_top:
-                try:
-                    import ctypes
-                    ctypes.windll.user32.PostMessageW(hwnd_top, 0, 0, 0)
-                except Exception:
-                    pass
-
-        # Native TrackPopupMenu modal loop has cleanly unposted and exited.
-        # It is now 100% safe to dispatch deferred actions without freezing context menu.
-        if chosen_action[0]:
-            action = chosen_action[0]
-            chosen_action[0] = None
-            self.after(10, action)
+        self._active_menu = CyberContextMenu(self, event.x_root, event.y_root, items)
 
     def set_update_info(self, info: UpdateInfo):
         """Called when update information is fetched from GitHub Releases."""

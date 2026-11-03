@@ -69,6 +69,7 @@ class AwakeController:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._wake_keeper = threading.Event()
 
     @property
     def is_active(self) -> bool:
@@ -80,8 +81,7 @@ class AwakeController:
         with self._lock:
             self._require_display = require_display
             if self._active:
-                flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
-                _call_ste(flags)
+                self._wake_keeper.set()
                 return True
             success = self._start_awake_thread()
             if success:
@@ -92,14 +92,19 @@ class AwakeController:
     def release(self) -> bool:
         """Release display lock and allow system to sleep normally."""
         with self._lock:
+            # Defensively clear execution state on calling thread
+            _call_ste(_RELEASE_FLAGS)
             if not self._active:
                 return True
             self._stop_event.set()
+            self._wake_keeper.set()
             if self._thread and self._thread.is_alive():
                 self._thread.join(timeout=2.0)
             self._active = False
             self._require_display = True
             self._stop_event.clear()
+            self._wake_keeper.clear()
+            _call_ste(_RELEASE_FLAGS)
             logger.info("Lucid: display lock RELEASED")
             return True
 
@@ -108,8 +113,7 @@ class AwakeController:
         with self._lock:
             self._require_display = required
             if self._active:
-                flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
-                _call_ste(flags)
+                self._wake_keeper.set()
 
     def toggle(self) -> bool:
         """Toggle between active and inactive. Returns new active state."""
@@ -122,6 +126,7 @@ class AwakeController:
     def _start_awake_thread(self) -> bool:
         """Spin up the keeper thread that holds the execution state."""
         self._stop_event.clear()
+        self._wake_keeper.clear()
         self._thread = threading.Thread(
             target=self._awake_loop,
             name="lucid-awake-keeper",
@@ -139,15 +144,15 @@ class AwakeController:
         Sets DISPLAY_REQUIRED + SYSTEM_REQUIRED once, then refreshes every 30s
         to ensure Windows doesn't reset the state on some builds.
         """
-        flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
-        success = _call_ste(flags)
-        if not success:
-            logger.warning("Initial SetThreadExecutionState call failed.")
-
-        # Refresh loop — some Windows versions reset the state after inactivity
-        while not self._stop_event.wait(timeout=30.0):
-            flags = _AWAKE_FLAGS if self._require_display else _AWAKE_SYSTEM_FLAGS
+        while not self._stop_event.is_set():
+            with self._lock:
+                req_disp = self._require_display
+            flags = _AWAKE_FLAGS if req_disp else _AWAKE_SYSTEM_FLAGS
             _call_ste(flags)
+
+            # Wait up to 30s or until notified by state change or stop
+            self._wake_keeper.wait(timeout=30.0)
+            self._wake_keeper.clear()
 
         # Cleanup: release the execution state from this same thread
         _call_ste(_RELEASE_FLAGS)

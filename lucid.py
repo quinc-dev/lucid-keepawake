@@ -110,13 +110,13 @@ class LucidApp:
         self._trigger_update_check()
 
         # Engage initial mode if requested on startup
-        if initial_blackout:
-            self._widget.after(300, self.engage_blackout)
-        elif initial_awake_seconds is not None:
+        if initial_awake_seconds is not None:
             if initial_awake_seconds == 0:
                 self._widget.after(300, self.toggle_infinite)
             else:
                 self._widget.after(300, lambda: self.start_timer(initial_awake_seconds))
+        if initial_blackout:
+            self._widget.after(300, self.engage_blackout)
 
         logger.info("Lucid running. Widget visible, tray active, IPC online.")
 
@@ -280,16 +280,23 @@ class LucidApp:
 
     def _on_timer_complete(self):
         """Called when countdown reaches 0."""
-        logger.info("Timer complete — releasing awake lock")
+        logger.info("Timer complete — releasing awake lock and quitting application (Mode: Auto-Quit)")
         self._awake.release()
-        if self._curtain and self._curtain.is_active:
-            self.wake_screen()
         if self._widget:
-            self._widget.after(0, self._notify_timer_complete)
+            self._widget.after(0, self._handle_timer_complete)
 
-    def _notify_timer_complete(self):
-        """Run on main thread after timer expires."""
-        logger.info("Timer complete notification")
+    def _handle_timer_complete(self):
+        """Run on main thread after timer expires — auto-quits to allow Windows Power Plan to sleep/turn off display."""
+        logger.info("Timer completed: Auto-quitting Lucid so Windows Power Plan can turn off screen/sleep")
+        was_curtain = bool(self._curtain and self._curtain.is_active)
+        if was_curtain:
+            try:
+                import ctypes
+                # HWND_BROADCAST (0xFFFF), WM_SYSCOMMAND (0x0112), SC_MONITORPOWER (0xF170), 2 (Power off)
+                ctypes.windll.user32.SendMessageW(0xFFFF, 0x0112, 0xF170, 2)
+            except Exception as e:
+                logger.debug(f"Monitor power-off call notice: {e}")
+        self._quit()
 
     # ─── State change callback ─────────────────────────────────────────────────
 
@@ -341,10 +348,44 @@ class LucidApp:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    args = sys.argv[1:]
+    raw_args = sys.argv[1:]
+    args = []
+    for a in raw_args:
+        if " " in a:
+            args.extend(a.split())
+        elif "=" in a and not a.startswith("=="):
+            args.extend(a.split("=", 1))
+        else:
+            args.append(a)
 
-    # CLI dispatch: If invoked with flags, query or forward to running instance
     if args:
+        has_blackout = any(a.lower().lstrip("-") in ("blackout", "curtain", "b") for a in args)
+        awake_arg = None
+        for i, a in enumerate(args):
+            clean = a.lower().lstrip("-")
+            if clean in ("awake", "on"):
+                if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                    awake_arg = args[i + 1]
+                else:
+                    awake_arg = "0"
+                break
+
+        if awake_arg is not None:
+            try:
+                dur = int(float(awake_arg) * 60)
+            except Exception:
+                dur = 0
+            res = send_ipc_command("awake", {"duration": dur})
+            if has_blackout:
+                send_ipc_command("blackout")
+            if res:
+                print(f"Lucid: {res.get('message', 'Awake active')}")
+            else:
+                print("Lucid instance not running. Starting Lucid in Keep-Awake mode...")
+                app = LucidApp()
+                app.run(initial_blackout=has_blackout, initial_awake_seconds=dur)
+            sys.exit(0)
+
         cmd = args[0].lower().lstrip("-")
         if cmd in ("blackout", "curtain", "b"):
             res = send_ipc_command("blackout")
@@ -352,7 +393,6 @@ def main():
                 print(f"Lucid: {res.get('message', 'Blackout engaged')}")
                 sys.exit(0)
             else:
-                # If not running, launch instance directly in blackout mode
                 print("Lucid instance not running. Launching Lucid in OLED Blackout mode...")
                 app = LucidApp()
                 app.run(initial_blackout=True)
@@ -377,21 +417,6 @@ def main():
                 print(f"Lucid: {res.get('message', 'Stopped')}")
             else:
                 print("Lucid is not running.")
-            sys.exit(0)
-        elif cmd in ("awake", "on"):
-            dur = 0
-            if len(args) > 1:
-                try:
-                    dur = int(float(args[1]) * 60)
-                except Exception:
-                    pass
-            res = send_ipc_command("awake", {"duration": dur})
-            if res:
-                print(f"Lucid: {res.get('message', 'Awake active')}")
-            else:
-                print("Lucid instance not running. Starting Lucid in Keep-Awake mode...")
-                app = LucidApp()
-                app.run(initial_awake_seconds=dur)
             sys.exit(0)
         elif cmd in ("help", "h"):
             print("Lucid CLI v1.1.0 — OLED & Keep-Awake Manager")

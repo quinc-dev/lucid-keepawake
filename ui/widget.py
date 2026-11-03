@@ -647,22 +647,31 @@ class LucidWidget(ctk.CTk):
 
     # ─── Window Setup ────────────────────────────────────────────────────────
 
+    def _hide_from_taskbar(self):
+        """Enforce WS_EX_TOOLWINDOW and strip WS_EX_APPWINDOW so widget never appears in Windows Taskbar."""
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            GWL_EXSTYLE = -20
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_EX_APPWINDOW = 0x00040000
+
+            own_hwnd = self.winfo_id()
+            parent_hwnd = user32.GetParent(own_hwnd)
+            for hwnd in (own_hwnd, parent_hwnd):
+                if hwnd:
+                    stylew = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                    new_style = (stylew | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+                    if stylew != new_style:
+                        user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+        except Exception as e:
+            logger.debug(f"Window style notice: {e}")
+
     def _setup_window(self):
         self.title("Lucid HUD")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         self.configure(fg_color=theme.BG_WIDGET)
-
-        # Set Window Favicon (High-Res PNG + Multi-Res ICO)
-        try:
-            if ICON_PNG_PATH.exists():
-                img_png = Image.open(ICON_PNG_PATH)
-                self._app_icon_photo = ImageTk.PhotoImage(img_png.resize((64, 64), Image.Resampling.LANCZOS))
-                self.iconphoto(False, self._app_icon_photo)
-            if ICON_ICO_PATH.exists():
-                self.iconbitmap(str(ICON_ICO_PATH))
-        except Exception as e:
-            logger.debug(f"Favicon setting notice: {e}")
 
         w, h = theme.WIDGET_W, theme.WIDGET_H
         sw = self.winfo_screenwidth()
@@ -670,17 +679,10 @@ class LucidWidget(ctk.CTk):
         self.geometry(f"{w}x{h}+{sw - w - 24}+{sh - h - 64}")
         self.resizable(False, False)
 
-        # Make borderless window activatable on Windows so Entry can receive typing focus
+        # Hide from Windows Taskbar & Alt+Tab via WS_EX_TOOLWINDOW
         self.update_idletasks()
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            hwnd = user32.GetParent(self.winfo_id()) or self.winfo_id()
-            stylew = user32.GetWindowLongW(hwnd, -20)
-            stylew = (stylew & ~0x00000080) | 0x00040000
-            user32.SetWindowLongW(hwnd, -20, stylew)
-        except Exception as e:
-            logger.debug(f"Window style notice: {e}")
+        self._hide_from_taskbar()
+        self.after(50, self._hide_from_taskbar)
 
         self.bind("<ButtonPress-1>", self._drag_start)
         self.bind("<B1-Motion>", self._drag_move)
@@ -837,6 +839,13 @@ class LucidWidget(ctk.CTk):
             self._entry_frame.configure(highlightbackground=theme.BORDER_SUBTLE)
 
         def _on_entry_click(e=None):
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                hwnd = user32.GetParent(self.winfo_id()) or self.winfo_id()
+                _force_window_foreground(hwnd)
+            except Exception:
+                pass
             self.focus_force()
             self._custom_entry.focus_set()
             _on_entry_focus_in()
@@ -1156,18 +1165,8 @@ class LucidWidget(ctk.CTk):
                     border_color=theme.BORDER_ACTIVE,
                 )
 
-        # Dynamic window/taskbar favicon
-        try:
-            png_path = ICON_ACTIVE_PNG_PATH if state != AppState.IDLE else ICON_IDLE_PNG_PATH
-            ico_path = ICON_ACTIVE_ICO_PATH if state != AppState.IDLE else ICON_IDLE_ICO_PATH
-            if png_path.exists():
-                img_png = Image.open(png_path)
-                self._app_icon_photo = ImageTk.PhotoImage(img_png.resize((64, 64), Image.Resampling.LANCZOS))
-                self.iconphoto(False, self._app_icon_photo)
-            if ico_path.exists():
-                self.iconbitmap(str(ico_path))
-        except Exception:
-            pass
+        # Ensure taskbar hidden state persists across state changes
+        self._hide_from_taskbar()
 
     def _reset_control_styles(self):
         for btn in self._chip_btns.values():
@@ -1192,8 +1191,10 @@ class LucidWidget(ctk.CTk):
 
     def show(self):
         if not self._is_closing:
+            self._hide_from_taskbar()
             self.deiconify()
             self.attributes("-topmost", True)
+            self._hide_from_taskbar()
 
     def hide(self):
         if hasattr(self, "_active_menu") and self._active_menu:

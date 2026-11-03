@@ -66,15 +66,22 @@ class OledCurtain:
         vx, vy, vw, vh = get_virtual_screen_geometry()
 
         self._window = tk.Toplevel(self._root)
+        self._window.withdraw()
         self._window.title("Lucid OLED Curtain")
         self._window.overrideredirect(True)
         self._window.attributes("-topmost", True)
-        try:
-            self._window.attributes("-fullscreen", True)
-        except Exception:
-            pass
         self._window.configure(bg="#000000")
         self._window.geometry(f"{vw}x{vh}+{vx}+{vy}")
+        self._window.update_idletasks()
+        try:
+            u32 = ctypes.windll.user32
+            for hwnd in (self._window.winfo_id(), u32.GetParent(self._window.winfo_id())):
+                if hwnd:
+                    st = u32.GetWindowLongW(hwnd, -20)
+                    u32.SetWindowLongW(hwnd, -20, (st | 0x00000080) & ~0x00040000)
+        except Exception:
+            pass
+        self._window.deiconify()
         self._window.lift()
 
         try:
